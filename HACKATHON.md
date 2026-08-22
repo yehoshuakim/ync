@@ -1,6 +1,6 @@
 # 맞다톤 2026 — 팀 작전 브리핑
 
-> 팀: 김현빈(Yehoshua) + 이건주 · 둘 다 Copilot Max 쿠폰 적용
+> 팀: 김현빈(Yehoshua, 팀장) + 이건주(Caleb) + 사무엘(Samuel, GitHub: `J23449595-afk`) · Copilot Max 쿠폰 적용
 > 마감: **오늘 16:30 제출 마감 (넘기면 자동 탈락)** · 제출 2회 가능, **마지막 제출이 최종 점수**
 > 공식: https://matdaaiga.kr/matdathon → github.com/matdaaiga-kr/matdathon-2026
 
@@ -83,13 +83,13 @@ graph LR
 4. **핵심 기능이 되는 순간 즉시 1차 배포 + 접속 URL 확인** — 배포를 마지막으로 미루지 말 것
 + AI는 과복잡화 경향 → 1차 결과물 나오면 "코드 간결하게 정리해줘" 요청
 
-## 6. 역할 분담 (2인)
+## 6. 역할 분담 (3인)
 
-| 담당 | 김현빈 (팀장) | 이건주 |
-|------|--------------|--------|
-| 문서 | PRD.md, 제출 이슈 | TRD.md 검증 |
-| 개발 | 인프라(Aspire AppHost, Azure 배포), repo 세팅 | 앱 코어(agent instructions, MCP 도구, web UI) |
-| 검증 | 배포 URL 스모크 테스트, 리더보드 | Playwright E2E, 반응형/접근성 |
+| 담당 | 김현빈 (팀장) | 이건주 | 사무엘 |
+|------|--------------|--------|--------|
+| 문서 | PRD.md, 제출 이슈 | TRD.md 검증 | PRD/UX 카피 검토 |
+| 개발 | 인프라(Aspire AppHost, Azure 배포), repo 세팅 | 앱 코어(agent instructions, MCP 도구, web UI) | web UI 폴리시(반응형·접근성·AI 라벨) |
+| 검증 | 배포 URL 스모크 테스트, 리더보드 | Playwright E2E | 배포 URL 실사용 테스트(모바일 포함) |
 
 > 팀 등록·결과 제출·repo 생성은 전부 **팀장 계정** 기준.
 

@@ -36,13 +36,16 @@
     각자 격리된 instructions(카드 동적 주입), 서로의 출력 못 봄
     산출(구조화 스키마): 후보안별 ACCEPT/REJECT + 근거 + 수용 조건
     출력은 불변 보존 (이후 누구도 수정 불가)
-→ [결정적 코드] 판정: 전원 ACCEPT 후보만 RESOLVED, 그 외 HUMAN
+→ [결정적 코드] 판정 3분할 (코드가 최종 권한, LLM 판정과 불일치 시 "확인 필요" 태그):
+    REJECTED  — 하드 제약 위반(위반 제약 표시, 폐기 — 사람 회의로 안 넘어감)
+    RESOLVED  — 전원 무조건 ACCEPT
+    CONTESTED — 하드 통과 + 1명 이상 우려(ACCEPT_WITH_CONCERNS) → 사람 회의 격상
     check_redlines(MCP): 타입화된 hard 제약 위반을 코드로 재검사
     합의 추적표: 후보안 × 아바타 × 제약 통과 여부 행렬
 → [Facilitator — fan-in] 판정 결과를 한국어 브리핑으로 종합
     판정 변경 금지·새 타협안 발명 금지 (근거 인용만)
-→ [MCP 도구] calc_dates(마감 검증) · make_ics(HUMAN 안건의 사람 회의 초대)
-→ [결과] 결정 패키지: 합의 초안 + 추적표 + HUMAN 안건(사유) + .ics + 기록 md
+→ [MCP 도구] make_ics(CONTESTED 안건의 사람 회의 초대 — 익일 10:00 고정, 날짜 계산 없음)
+→ [결과] 결정 패키지: 합의 초안 + 추적표 + CONTESTED 안건(사유) + REJECTED(위반 제약) + .ics + 기록 md
     + 승인 버튼("합의 초안 — 최종 확정은 사람")
     + 시간 영수증: 예상 참석 인시(입력값) vs 실제 실행시간(측정) — "잠재 절감 추정치, 검토비용 미포함" 라벨
 ```
@@ -55,7 +58,7 @@
 2. 아바타 카드 **구조화 필드 편집** (이름·역할·우선순위·타입화 제약) 후 실행
 3. 아바타 3 병렬 **1회** + Facilitator **1회** (다중 라운드 없음)
 4. SSE 스트리밍: phase 스테퍼 + 아바타별 평가 카드 실시간 표시
-5. 합의 추적표 + 승인 버튼 + HUMAN 안건 .ics + 결정 기록 md 다운로드
+5. 합의 추적표 + 승인 버튼 + CONTESTED 안건 .ics + 결정 기록 md 다운로드
 6. 시간 영수증 (정직화 라벨)
 7. 에러 상태(빈/과대 입력·모델 실패 재시도) + 반응형 + 남용 가드(입력 길이·요청 빈도 제한)
 
@@ -63,7 +66,7 @@
 
 ## 4. 항목별 만점 근거
 
-- **① SDK+AF 25**: Copilot SDK 단일 chat client(Max 계정 인증) / Concurrent+custom aggregator 패턴명 TRD 적시 / MCP 3도구 실호출 / 카드→instructions 동적 주입 / 구조화 출력 / SSE
+- **① SDK+AF 25**: Copilot SDK 단일 chat client(Max 계정 인증, AF 에이전트에 주입) / Concurrent+custom aggregator 패턴명 TRD 적시 / MCP 2도구(check_redlines·make_ics) 실호출 / 카드→instructions 동적 주입 / 구조화 출력 / SSE
 - **② 생산성 18**: 인시 절감을 입력 기반+실측으로 정직하게 표시, PRD에 페르소나·before/after
 - **③ Azure 18**: web/agent/mcp 3서비스만, aspire deploy, /health
 - **④ 완성도 16**: P0 7개 좁고 깊게, E2E 무결
@@ -75,7 +78,7 @@
 
 1. URL 접속 → "당신의 아바타가 먼저 회의합니다" + [샘플로 시작]
 2. 아바타 3개 평가 스트리밍 관람 → 판정
-3. 결과: 합의 초안 / 추적표 / HUMAN 안건+사유 / .ics / 영수증
+3. 결과: 합의 초안 / 추적표 / CONTESTED 안건+사유 / REJECTED+위반 제약 / .ics / 영수증
 4. 승인 → 기록 md 다운로드
 
 ## 6. 결정 기록

@@ -42,9 +42,9 @@ persona source; reclaimed time returns to deep work and team meaning — a
    (unanimous ACCEPT rule), and hard constraints are re-checked by a
    deterministic MCP tool (`check_redlines`) — the LLM cannot invent a
    compromise or override a veto.
-3. **Tool-verified facts**: dates validated via `calc_dates`; human-meeting
-   invites generated via `make_ics`. Facilitator agent only synthesizes a
-   briefing, quoting avatar evidence; it may not alter verdicts.
+3. **Tool-verified facts**: hard constraints re-checked by `check_redlines`;
+   human-meeting invites generated via `make_ics`. Facilitator agent only
+   synthesizes a briefing, quoting avatar evidence; it may not alter verdicts.
 4. **Streaming transparency**: users watch each avatar's evaluation arrive
    live (SSE), then see the verdict matrix — the judge path shows agent work,
    not a spinner.
@@ -65,7 +65,8 @@ persona source; reclaimed time returns to deep work and team meaning — a
 **안건**: "9월 스프린트: 다음 2주 동안 무엇을 먼저 만들까?"
 (예상 회의: 참석 3명 × 30분)
 
-**후보안** (structured fields shown as editable chips):
+**후보안** — fixed columns; users may edit **values only** (no adding/removing
+columns or candidates):
 
 | ID | 후보안 | dev_days | revenue_impact (1–5) | ux_impact (1–5) | tech_debt (1–5, lower=better) |
 |----|--------|---------:|---------------------:|----------------:|------------------------------:|
@@ -73,20 +74,44 @@ persona source; reclaimed time returns to deep work and team meaning — a
 | B | 결제 연동 (토스페이먼츠) | 9 | 5 | 2 | 3 |
 | C | 관리자 대시보드 | 12 | 2 | 2 | 4 |
 
-**아바타 카드** (each fully editable):
+**아바타 카드** — fixed 3 avatars; editable: name, role, priority field
+selection, constraint **values** (constraint format is fixed
+`field <op> number`, chosen from the columns above):
 
-| 아바타 | 역할 | Priorities (soft) | Hard constraints (typed) |
-|--------|------|-------------------|--------------------------|
-| **Yeho** | COO | 매출 임팩트 우선, 빠른 출시 | `dev_days <= 10` |
-| **Ken** | Lead Developer | 기술부채 최소화, 지속 가능한 속도 | `dev_days <= 10`, `tech_debt <= 3` |
-| **Sky** | Product Designer | 사용자 경험 우선 | `ux_impact >= 3` |
+| 아바타 | 역할 | Top priority (soft) | Hard constraints (typed) |
+|--------|------|---------------------|--------------------------|
+| **Yehoshua** | COO | revenue_impact | `dev_days <= 10` |
+| **Caleb** | Lead Developer | tech_debt (low) | `dev_days <= 10`, `tech_debt <= 3` |
+| **Samuel** | Product Designer | ux_impact | `ux_impact >= 2` |
 
-**Expected sample outcome** (deterministic given constraints):
-- A: passes all hard constraints → if all avatars ACCEPT → **RESOLVED**
-  (consensus draft).
-- B: violates Sky's `ux_impact >= 3` → **CONTESTED** (사유: 매출 vs UX
-  트레이드오프는 사람 판단 필요) → human-meeting agenda + `.ics`.
-- C: violates `dev_days <= 10` (Yeho, Ken) → **CONTESTED/기각 사유 명시**.
+**Avatar verdict rules (mechanical — goes into each avatar's instructions):**
+
+1. If a candidate violates any of YOUR hard constraints → `REJECT`,
+   citing the constraint.
+2. If all your hard constraints pass → you MUST return `ACCEPT`.
+   Never reject for soft-priority reasons.
+3. When accepting, if the candidate scores ≤ 2 on your top-priority field →
+   return `ACCEPT_WITH_CONCERNS` and state the concern in evidence.
+4. Evidence may only quote fields present in the input. No invented facts.
+
+**Verdict computation (app code, authoritative — not the LLM):**
+
+- Any hard-constraint violation (re-checked deterministically via
+  `check_redlines`) → **REJECTED** (폐기, shown with the failing constraint;
+  never sent to a human meeting).
+- All three avatars plain `ACCEPT` → **RESOLVED** (consensus draft).
+- Hard constraints pass but ≥ 1 `ACCEPT_WITH_CONCERNS` → **CONTESTED**
+  (human-meeting agenda + `.ics`).
+- If an avatar's verdict contradicts the deterministic check, the code wins
+  and the item is tagged "확인 필요".
+
+**Expected sample outcome** (guaranteed by the rules above):
+- A: all hard pass, no field ≤ 2 on anyone's top priority → **RESOLVED**.
+- B: hard passes (Samuel's `ux_impact >= 2` barely holds), but
+  `ux_impact = 2` triggers Samuel's concern → **CONTESTED**
+  (사유: 매출 최고안이지만 UX 저하 우려 — 트레이드오프는 사람 판단)
+  → human-meeting `.ics` (next day 10:00, fixed).
+- C: `dev_days 12 > 10` violates Yehoshua & Caleb → **REJECTED**.
 - Time receipt: "예상 90 person-minutes → 실측 실행 {measured}초.
   잠재 절감 추정치이며 검토 비용은 포함하지 않습니다."
 
@@ -96,12 +121,12 @@ persona source; reclaimed time returns to deep work and team meaning — a
 
 | # | Feature | Acceptance criteria |
 |---|---------|---------------------|
-| 1 | Sample preset + editable input | 1 click loads the full preset above; agenda, candidates (fields), avatar cards (name/role/priorities/typed hard constraints) all editable; validation with inline errors (empty, over-length, malformed constraint) |
-| 2 | Avatar concurrent evaluation | 3 avatar agents run concurrently via Agent Framework; each returns a schema-validated verdict per candidate: ACCEPT/REJECT + evidence + conditions; outputs immutable |
-| 3 | Deterministic verdict + redline check | App code computes RESOLVED (unanimous ACCEPT) vs CONTESTED; `check_redlines` MCP tool re-validates typed constraints; verdict matrix rendered (candidate × avatar × pass/fail) |
+| 1 | Sample preset + value editing | 1 click loads the full preset above; agenda text, candidate field values, avatar names/roles/priority-field/constraint values editable — columns, candidate count (3), avatar count (3), and constraint format are FIXED; validation with inline errors (empty, over-length, non-numeric value) |
+| 2 | Avatar concurrent evaluation | 3 avatar agents run concurrently via Agent Framework; each follows the mechanical verdict rules (Section 4) and returns a schema-validated result per candidate: ACCEPT / ACCEPT_WITH_CONCERNS / REJECT + evidence quoting input fields only; outputs immutable |
+| 3 | Deterministic verdict + redline check | App code computes RESOLVED / CONTESTED / REJECTED per Section 4; `check_redlines` MCP tool re-validates typed constraints; code is authoritative over LLM verdicts ("확인 필요" tag on mismatch); verdict matrix rendered (candidate × avatar × constraint pass/fail) |
 | 4 | Facilitator briefing | Facilitator agent writes Korean briefing quoting avatar evidence; may not change verdicts or invent compromises |
 | 5 | Live progress | SSE streams phases + per-avatar cards as they complete; graceful error state + retry button |
-| 6 | Decision package | Consensus draft + contested list with reasons + `.ics` for human meeting (via `make_ics`, dates via `calc_dates`) + decision record markdown download; **[초안 승인]** button gates downloads; all AI output labeled "AI 생성 — 검토 후 사용" |
+| 6 | Decision package | Consensus draft + contested list with reasons + rejected list with failing constraints + `.ics` for the human meeting (via `make_ics`; meeting time fixed to next day 10:00 KST — no date math) + decision record markdown download; **[초안 승인]** button gates downloads; all AI output labeled "AI 생성 — 검토 후 사용" |
 | 7 | Time receipt | Expected person-minutes (from input) vs measured run seconds, with honesty label |
 
 ### P1 — only if time remains
@@ -131,10 +156,11 @@ aria labels on stepper/cards/buttons, focus states, sufficient contrast.
 ## 7. Success criteria (mapped to judging)
 
 - **SDK+AF (25%)**: Copilot SDK is the only model connection (team Copilot Max
-  account auth); Agent Framework runs 3 concurrent avatar agents + facilitator
-  fan-in; agents call MCP tools (`check_redlines`, `calc_dates`, `make_ics`);
-  persona cards dynamically injected into instructions; structured outputs;
-  SSE streaming end-to-end.
+  account auth), injected as the chat client that Agent Framework agents use;
+  Agent Framework runs 3 concurrent avatar agents + facilitator fan-in; agents
+  call MCP tools (`check_redlines`, `make_ics`) over Streamable HTTP; persona
+  cards dynamically injected into instructions; structured outputs; SSE
+  streaming end-to-end.
 - **Productivity (18%)**: quantified person-minute savings shown honestly;
   target persona + before/after in this PRD.
 - **Azure (18%)**: web/agent/mcp on Azure Container Apps via repeatable
@@ -144,8 +170,10 @@ aria labels on stepper/cards/buttons, focus states, sufficient contrast.
 - **UX (12%)**: transparent streaming, verdict matrix, human approval gate.
 - **Responsible AI (6%)**: "limited role-delegation card" framing (not a person
   clone); AI-generated labels; no fabrication (evidence must quote input);
-  injection guard (instructions in agenda text are treated as data);
-  deterministic constraint re-check; abuse guard (input length + rate limit).
+  injection guard — every user-provided string (agenda, candidate names) is
+  wrapped in `<user_input>` XML tags when passed to agents and treated as data,
+  never as instructions; deterministic constraint re-check; abuse guard
+  (input length + rate limit).
 - **Innovation (5%)**: category shift — notetakers record meetings; Standin
   pre-resolves them; the app proves its own effect via the time receipt.
 

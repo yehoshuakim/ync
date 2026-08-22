@@ -202,3 +202,19 @@ GPT-5.6 검증 요지: v2 원안("회의 대체")은 방어 불가 — 아바타
 5. P0 컷 박제 + 산출물은 v1 실행패키지(결정 md·.ics) 재사용. 1순위 리스크 = Azure에서 Copilot Max 비대화형 인증 (TRD에서 최우선 검증).
 
 → **현빈 결정: v2-lite 채택.** IDEATION.md 확정본으로 재작성 완료. 아바타·철학·Standin 이름 유지.
+
+## [08-22 13:25] PRD 작성 + 교차검증(Gemini 3.1 Pro) 반영 (Copilot)
+
+PRD 초안 작성 후 검증에서 발견된 오류와 수정:
+
+1. **샘플 논리 오류**: soft 우선순위 때문에 LLM이 A안을 REJECT할 수 있음 → **기계적 판정 규칙** 명문화: 하드 통과 시 무조건 ACCEPT, top-priority 필드 ≤2일 때만 ACCEPT_WITH_CONCERNS.
+2. **2분법 오류**: 하드 위반(C안)은 사람 회의감이 아니라 폐기 → 판정 **3분할 RESOLVED / CONTESTED / REJECTED**.
+3. **유령 도구 제거**: 샘플에 날짜 제약이 없는데 calc_dates 요구 → 삭제. MCP는 `check_redlines`·`make_ics` 2개, ics는 익일 10시 고정.
+4. **편집 범위 제한**: "전부 편집"은 3.5h 내 불가 → **값(value)만 편집**, 컬럼·개수·제약 포맷 고정.
+5. **인젝션 가드 구체화**: 사용자 입력은 `<user_input>` XML 태그로 감싸 시스템 지시와 격리.
+
+## [08-22 13:27] 팀 확장 — 사무엘 합류 (현빈)
+
+- 팀원 추가: **사무엘 (Samuel)**, GitHub: `J23449595-afk` → 3인 팀.
+- 샘플 아바타 이름도 실제 팀 반영: **Yehoshua / Caleb / Samuel** (12:57 질문의 답).
+- HACKATHON.md 역할 분담 3인 체제로 갱신, repo 협업자 초대.
