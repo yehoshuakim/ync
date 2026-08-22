@@ -1,4 +1,4 @@
-import type { RefObject } from 'react';
+import { useEffect, useState, type RefObject } from 'react';
 import type { FieldKey, Op } from '../types';
 import { FIELD_ORDER, FIELD_SHORT, FIELD_RANGE, OPS, OP_LABELS } from '../labels';
 import type { ConstraintForm, FormErrors, FormState } from '../validation';
@@ -29,6 +29,16 @@ const inputStyle = {
   backgroundColor: 'var(--color-bg)',
 } as const;
 
+function candidateHasError(errors: FormErrors, index: number) {
+  const candidate = errors.candidates[index];
+  return Boolean(candidate?.name || FIELD_ORDER.some((field) => candidate?.fields[field]));
+}
+
+function avatarHasError(errors: FormErrors, index: number) {
+  const avatar = errors.avatars[index];
+  return Boolean(avatar?.name || avatar?.constraints.some(Boolean));
+}
+
 export function InputPanel({
   form,
   setForm,
@@ -39,6 +49,17 @@ export function InputPanel({
   onLoadSample,
   agendaRef,
 }: Props) {
+  const [candidateOpen, setCandidateOpen] = useState<boolean[]>(() => form.candidates.map(() => false));
+  const [avatarOpen, setAvatarOpen] = useState<boolean[]>(() => form.avatars.map(() => false));
+
+  useEffect(() => {
+    if (!showErrors) return;
+    setCandidateOpen((prev) =>
+      prev.map((open, index) => open || candidateHasError(errors, index)),
+    );
+    setAvatarOpen((prev) => prev.map((open, index) => open || avatarHasError(errors, index)));
+  }, [errors, showErrors]);
+
   const updateCandidate = (i: number, patch: Partial<FormState['candidates'][number]>) =>
     setForm((prev) => {
       const candidates = prev.candidates.map((c, idx) => (idx === i ? { ...c, ...patch } : c));
@@ -210,53 +231,78 @@ export function InputPanel({
         <h2 className="mb-2">후보안</h2>
         <div className="flex flex-col gap-3">
           {form.candidates.map((c, i) => (
-            <div key={c.id} className="rounded-xl border p-4" style={cardBase}>
-              <div className="mb-2 flex items-center gap-2">
-                <span
-                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border text-sm font-bold"
-                  style={{ borderColor: 'var(--color-accent)', color: 'var(--color-accent)' }}
-                >
-                  {c.id}
-                </span>
-                <div className="w-full">
-                  <label htmlFor={`cand-name-${c.id}`} className="sr-only">
-                    후보안 {c.id} 이름
-                  </label>
-                  <input
-                    id={`cand-name-${c.id}`}
-                    type="text"
-                    value={c.name}
-                    maxLength={60}
-                    aria-invalid={showErrors && errors.candidates[i]?.name ? true : undefined}
-                    aria-describedby={
-                      showErrors && errors.candidates[i]?.name ? `cand-name-${c.id}-err` : undefined
-                    }
-                    onChange={(e) => updateCandidate(i, { name: e.target.value })}
-                    placeholder="후보안 이름"
-                    className="w-full rounded-lg border px-2 py-2 font-medium"
-                    style={inputStyle}
-                  />
+            <details
+              key={c.id}
+              open={candidateOpen[i]}
+              onToggle={(event) =>
+                setCandidateOpen((prev) =>
+                  prev.map((open, index) => (index === i ? event.currentTarget.open : open)),
+                )
+              }
+              className="rounded-xl border"
+              style={cardBase}
+            >
+              <summary className="cursor-pointer list-none rounded-xl p-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]">
+                <div className="flex items-center gap-2">
+                  <span
+                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border text-sm font-bold"
+                    style={{ borderColor: 'var(--color-accent)', color: 'var(--color-accent)' }}
+                  >
+                    {c.id}
+                  </span>
+                  <span className="min-w-0 text-sm font-medium">
+                    {`${c.id} · ${c.name || '후보안 이름'} — 개발 ${c.fields.dev_days || '0'}일 · 매출 ${c.fields.revenue_impact || '0'} · UX ${c.fields.ux_impact || '0'} · 부채 ${c.fields.tech_debt || '0'}`}
+                  </span>
+                </div>
+              </summary>
+              <div className="border-t px-4 pb-4 pt-3" style={{ borderColor: 'var(--color-border)' }}>
+                <div className="mb-2 flex items-center gap-2">
+                  <span
+                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border text-sm font-bold"
+                    style={{ borderColor: 'var(--color-accent)', color: 'var(--color-accent)' }}
+                  >
+                    {c.id}
+                  </span>
+                  <div className="w-full">
+                    <label htmlFor={`cand-name-${c.id}`} className="sr-only">
+                      후보안 {c.id} 이름
+                    </label>
+                    <input
+                      id={`cand-name-${c.id}`}
+                      type="text"
+                      value={c.name}
+                      maxLength={60}
+                      aria-invalid={showErrors && errors.candidates[i]?.name ? true : undefined}
+                      aria-describedby={
+                        showErrors && errors.candidates[i]?.name ? `cand-name-${c.id}-err` : undefined
+                      }
+                      onChange={(e) => updateCandidate(i, { name: e.target.value })}
+                      placeholder="후보안 이름"
+                      className="w-full rounded-lg border px-2 py-2 font-medium"
+                      style={inputStyle}
+                    />
+                  </div>
+                </div>
+                <FieldError
+                  id={`cand-name-${c.id}-err`}
+                  message={showErrors ? errors.candidates[i]?.name : undefined}
+                />
+                <div className="mt-2 grid grid-cols-2 gap-3">
+                  {FIELD_ORDER.map((f) => (
+                    <NumberStepper
+                      key={f}
+                      id={`cand-${c.id}-${f}`}
+                      label={CANDIDATE_FIELD_LABELS[f]}
+                      value={c.fields[f]}
+                      min={FIELD_RANGE[f].min}
+                      max={FIELD_RANGE[f].max}
+                      error={showErrors ? errors.candidates[i]?.fields[f] : undefined}
+                      onChange={(v) => updateCandidateField(i, f, v)}
+                    />
+                  ))}
                 </div>
               </div>
-              <FieldError
-                id={`cand-name-${c.id}-err`}
-                message={showErrors ? errors.candidates[i]?.name : undefined}
-              />
-              <div className="mt-2 grid grid-cols-2 gap-3">
-                {FIELD_ORDER.map((f) => (
-                  <NumberStepper
-                    key={f}
-                    id={`cand-${c.id}-${f}`}
-                    label={CANDIDATE_FIELD_LABELS[f]}
-                    value={c.fields[f]}
-                    min={FIELD_RANGE[f].min}
-                    max={FIELD_RANGE[f].max}
-                    error={showErrors ? errors.candidates[i]?.fields[f] : undefined}
-                    onChange={(v) => updateCandidateField(i, f, v)}
-                  />
-                ))}
-              </div>
-            </div>
+            </details>
           ))}
         </div>
       </section>
@@ -269,170 +315,187 @@ export function InputPanel({
         </p>
         <div className="flex flex-col gap-3">
           {form.avatars.map((a, ai) => (
-            <div key={ai} className="rounded-xl border p-4" style={cardBase}>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label
-                    htmlFor={`av-name-${ai}`}
-                    className="mb-1 block text-xs"
-                    style={{ color: 'var(--color-muted)' }}
-                  >
-                    이름
-                  </label>
-                  <input
-                    id={`av-name-${ai}`}
-                    type="text"
-                    value={a.name}
-                    maxLength={20}
-                    aria-invalid={showErrors && errors.avatars[ai]?.name ? true : undefined}
-                    aria-describedby={
-                      showErrors && errors.avatars[ai]?.name ? `av-name-${ai}-err` : undefined
-                    }
-                    onChange={(e) => updateAvatar(ai, { name: e.target.value })}
-                    className="w-full rounded-lg border px-2 py-2 font-medium"
-                    style={inputStyle}
-                  />
-                  <FieldError
-                    id={`av-name-${ai}-err`}
-                    message={showErrors ? errors.avatars[ai]?.name : undefined}
-                  />
+            <details
+              key={ai}
+              open={avatarOpen[ai]}
+              onToggle={(event) =>
+                setAvatarOpen((prev) =>
+                  prev.map((open, index) => (index === ai ? event.currentTarget.open : open)),
+                )
+              }
+              className="rounded-xl border"
+              style={cardBase}
+            >
+              <summary className="cursor-pointer list-none rounded-xl p-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]">
+                <span className="text-sm font-medium">
+                  {`${a.name || '아바타'} · ${a.role || '역할'} — 우선 관심: ${FIELD_SHORT[a.top_priority]} · 레드라인 ${a.hard_constraints.length}개`}
+                </span>
+              </summary>
+              <div className="border-t px-4 pb-4 pt-3" style={{ borderColor: 'var(--color-border)' }}>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label
+                      htmlFor={`av-name-${ai}`}
+                      className="mb-1 block text-xs"
+                      style={{ color: 'var(--color-muted)' }}
+                    >
+                      이름
+                    </label>
+                    <input
+                      id={`av-name-${ai}`}
+                      type="text"
+                      value={a.name}
+                      maxLength={20}
+                      aria-invalid={showErrors && errors.avatars[ai]?.name ? true : undefined}
+                      aria-describedby={
+                        showErrors && errors.avatars[ai]?.name ? `av-name-${ai}-err` : undefined
+                      }
+                      onChange={(e) => updateAvatar(ai, { name: e.target.value })}
+                      className="w-full rounded-lg border px-2 py-2 font-medium"
+                      style={inputStyle}
+                    />
+                    <FieldError
+                      id={`av-name-${ai}-err`}
+                      message={showErrors ? errors.avatars[ai]?.name : undefined}
+                    />
+                  </div>
+                  <div>
+                    <label
+                      htmlFor={`av-role-${ai}`}
+                      className="mb-1 block text-xs"
+                      style={{ color: 'var(--color-muted)' }}
+                    >
+                      역할
+                    </label>
+                    <input
+                      id={`av-role-${ai}`}
+                      type="text"
+                      value={a.role}
+                      maxLength={30}
+                      onChange={(e) => updateAvatar(ai, { role: e.target.value })}
+                      className="w-full rounded-lg border px-2 py-2"
+                      style={inputStyle}
+                    />
+                  </div>
                 </div>
-                <div>
+
+                <div className="mt-3">
                   <label
-                    htmlFor={`av-role-${ai}`}
+                    htmlFor={`av-top-${ai}`}
                     className="mb-1 block text-xs"
                     style={{ color: 'var(--color-muted)' }}
                   >
-                    역할
+                    우선 관심(top priority)
                   </label>
-                  <input
-                    id={`av-role-${ai}`}
-                    type="text"
-                    value={a.role}
-                    maxLength={30}
-                    onChange={(e) => updateAvatar(ai, { role: e.target.value })}
+                  <select
+                    id={`av-top-${ai}`}
+                    value={a.top_priority}
+                    onChange={(e) => updateAvatar(ai, { top_priority: e.target.value as FieldKey })}
                     className="w-full rounded-lg border px-2 py-2"
                     style={inputStyle}
-                  />
-                </div>
-              </div>
-
-              <div className="mt-3">
-                <label
-                  htmlFor={`av-top-${ai}`}
-                  className="mb-1 block text-xs"
-                  style={{ color: 'var(--color-muted)' }}
-                >
-                  우선 관심(top priority)
-                </label>
-                <select
-                  id={`av-top-${ai}`}
-                  value={a.top_priority}
-                  onChange={(e) => updateAvatar(ai, { top_priority: e.target.value as FieldKey })}
-                  className="w-full rounded-lg border px-2 py-2"
-                  style={inputStyle}
-                >
-                  {FIELD_ORDER.map((f) => (
-                    <option key={f} value={f}>
-                      {FIELD_SHORT[f]}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="mt-3">
-                <span className="mb-1 block text-xs" style={{ color: 'var(--color-muted)' }}>
-                  레드라인
-                </span>
-                <div className="flex flex-col gap-2">
-                  {a.hard_constraints.map((h, ci) => {
-                    const cErr = showErrors ? errors.avatars[ai]?.constraints[ci] : undefined;
-                    return (
-                      <div key={ci}>
-                        <div className="flex items-center gap-2">
-                          <label htmlFor={`av-${ai}-c-${ci}-field`} className="sr-only">
-                            레드라인 필드
-                          </label>
-                          <select
-                            id={`av-${ai}-c-${ci}-field`}
-                            value={h.field}
-                            onChange={(e) =>
-                              updateConstraint(ai, ci, { field: e.target.value as FieldKey })
-                            }
-                            className="min-w-0 flex-1 rounded-lg border px-2 py-2"
-                            style={inputStyle}
-                          >
-                            {FIELD_ORDER.map((f) => (
-                              <option key={f} value={f}>
-                                {FIELD_SHORT[f]}
-                              </option>
-                            ))}
-                          </select>
-                          <label htmlFor={`av-${ai}-c-${ci}-op`} className="sr-only">
-                            연산자
-                          </label>
-                          <select
-                            id={`av-${ai}-c-${ci}-op`}
-                            value={h.op}
-                            onChange={(e) => updateConstraint(ai, ci, { op: e.target.value as Op })}
-                            className="w-16 shrink-0 rounded-lg border px-2 py-2 text-center"
-                            style={inputStyle}
-                          >
-                            {OPS.map((op) => (
-                              <option key={op} value={op}>
-                                {OP_LABELS[op]}
-                              </option>
-                            ))}
-                          </select>
-                          <label htmlFor={`av-${ai}-c-${ci}-val`} className="sr-only">
-                            레드라인 값
-                          </label>
-                          <input
-                            id={`av-${ai}-c-${ci}-val`}
-                            type="number"
-                            inputMode="numeric"
-                            value={h.value}
-                            min={0}
-                            max={60}
-                            aria-invalid={cErr ? true : undefined}
-                            aria-describedby={cErr ? `av-${ai}-c-${ci}-err` : undefined}
-                            onChange={(e) => updateConstraint(ai, ci, { value: e.target.value })}
-                            className="w-20 shrink-0 rounded-lg border px-2 py-2 text-center"
-                            style={inputStyle}
-                          />
-                          <button
-                            type="button"
-                            aria-label="레드라인 삭제"
-                            onClick={() => removeConstraint(ai, ci)}
-                            className="w-11 shrink-0 rounded-lg border text-sm"
-                            style={{ borderColor: 'var(--color-border)' }}
-                          >
-                            삭제
-                          </button>
-                        </div>
-                        <FieldError id={`av-${ai}-c-${ci}-err`} message={cErr} />
-                      </div>
-                    );
-                  })}
-                </div>
-                {a.hard_constraints.length < 2 && (
-                  <button
-                    type="button"
-                    onClick={() => addConstraint(ai)}
-                    className="mt-2 text-sm"
-                    style={{ color: 'var(--color-accent)' }}
                   >
-                    + 레드라인 추가
-                  </button>
-                )}
+                    {FIELD_ORDER.map((f) => (
+                      <option key={f} value={f}>
+                        {FIELD_SHORT[f]}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="mt-3">
+                  <span className="mb-1 block text-xs" style={{ color: 'var(--color-muted)' }}>
+                    레드라인
+                  </span>
+                  <div className="flex flex-col gap-2">
+                    {a.hard_constraints.map((h, ci) => {
+                      const cErr = showErrors ? errors.avatars[ai]?.constraints[ci] : undefined;
+                      return (
+                        <div key={ci}>
+                          <div className="flex items-center gap-2">
+                            <label htmlFor={`av-${ai}-c-${ci}-field`} className="sr-only">
+                              레드라인 필드
+                            </label>
+                            <select
+                              id={`av-${ai}-c-${ci}-field`}
+                              value={h.field}
+                              onChange={(e) =>
+                                updateConstraint(ai, ci, { field: e.target.value as FieldKey })
+                              }
+                              className="min-w-0 flex-1 rounded-lg border px-2 py-2"
+                              style={inputStyle}
+                            >
+                              {FIELD_ORDER.map((f) => (
+                                <option key={f} value={f}>
+                                  {FIELD_SHORT[f]}
+                                </option>
+                              ))}
+                            </select>
+                            <label htmlFor={`av-${ai}-c-${ci}-op`} className="sr-only">
+                              연산자
+                            </label>
+                            <select
+                              id={`av-${ai}-c-${ci}-op`}
+                              value={h.op}
+                              onChange={(e) => updateConstraint(ai, ci, { op: e.target.value as Op })}
+                              className="w-16 shrink-0 rounded-lg border px-2 py-2 text-center"
+                              style={inputStyle}
+                            >
+                              {OPS.map((op) => (
+                                <option key={op} value={op}>
+                                  {OP_LABELS[op]}
+                                </option>
+                              ))}
+                            </select>
+                            <label htmlFor={`av-${ai}-c-${ci}-val`} className="sr-only">
+                              레드라인 값
+                            </label>
+                            <input
+                              id={`av-${ai}-c-${ci}-val`}
+                              type="number"
+                              inputMode="numeric"
+                              value={h.value}
+                              min={0}
+                              max={60}
+                              aria-invalid={cErr ? true : undefined}
+                              aria-describedby={cErr ? `av-${ai}-c-${ci}-err` : undefined}
+                              onChange={(e) => updateConstraint(ai, ci, { value: e.target.value })}
+                              className="w-20 shrink-0 rounded-lg border px-2 py-2 text-center"
+                              style={inputStyle}
+                            />
+                            <button
+                              type="button"
+                              aria-label="레드라인 삭제"
+                              onClick={() => removeConstraint(ai, ci)}
+                              className="w-11 shrink-0 rounded-lg border text-sm"
+                              style={{ borderColor: 'var(--color-border)' }}
+                            >
+                              삭제
+                            </button>
+                          </div>
+                          <FieldError id={`av-${ai}-c-${ci}-err`} message={cErr} />
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {a.hard_constraints.length < 2 && (
+                    <button
+                      type="button"
+                      onClick={() => addConstraint(ai)}
+                      className="mt-2 text-sm"
+                      style={{ color: 'var(--color-accent)' }}
+                    >
+                      + 레드라인 추가
+                    </button>
+                  )}
+                </div>
               </div>
-            </div>
+            </details>
           ))}
         </div>
       </section>
 
       {/* Run button — sticky at bottom on mobile */}
-      <div className="sticky bottom-0 z-10 -mx-1 pb-1 lg:static">
+      <div className="sticky bottom-0 z-10 -mx-1 pb-[calc(env(safe-area-inset-bottom)+0.25rem)] md:static md:mx-0 md:pb-0">
         <div
           className="rounded-xl p-1"
           style={{ backgroundColor: 'var(--color-bg)' }}
