@@ -229,3 +229,20 @@ PRD 초안 작성 후 검증에서 발견된 오류와 수정:
 - TRD.md 확정: 3서비스 고정, MCP 2도구 스키마, SSE 이벤트 스키마, 데이터 모델(TS/Pydantic 미러), 판정 로직 코드 권한 명시, Gate 0(모델 스모크 테스트를 UI 작업 전에), 결정 기록 7건.
 - aspire CLI 설치 완료 (13.5.2) — brew formula 없음, 공식 스크립트 사용. HACKATHON.md 체크리스트 갱신.
 - 다음: GPT-5.3-Codex로 TRD 교차검증 → 반영 → 원샷 구현 착수.
+
+## [08-22 13:40] Dockerfile 질문 — 정정 (현빈 → Copilot)
+
+- 현빈: "agent Dockerfile은 aspire로 하는 건데 없어야 하는 거 아냐? 자동화된 건가?" + HACKATHON.md에 제대로 기록 지시.
+- 답: **aspire는 Dockerfile을 자동 생성하지 않음.** 강사 예제 repo 실물 확인 결과 서비스별 명시적 Dockerfile(src/agent/Dockerfile 등) + apphost의 `publishAsDockerFile()` 패턴. HACKATHON.md의 "Dockerfile 불필요" 문구가 오류였음 → 정정 완료. 제출 repo는 ync 확정(현빈 선택).
+
+## [08-22 13:58] TRD 교차검증(GPT-5.3-Codex) 12건 반영 + 확정 (Copilot)
+
+검증 지적 중 실물 재검증으로 판명된 핵심:
+
+1. **(지적 정당) CLI 번들 주장 오류**: 최신 sdk 1.0.11은 CLI를 번들하지 않고 첫 사용 시 다운로드. 그런데 어댑터(1.0.3)가 고정한 **sdk 1.0.2는 CLI가 wheel에 번들**(manylinux x86_64 97MB) → 컨테이너에서 다운로드 불필요. 대신 Apple Silicon에서 amd64 빌드 필수(`DOCKER_DEFAULT_PLATFORM=linux/amd64`).
+2. **(신규 발견) 버전 충돌 함정**: 어댑터가 `github-copilot-sdk==1.0.2` 정확 고정 → pyproject에 sdk를 직접 핀하면 해석 실패. sdk는 어댑터에 위임.
+3. **심볼 전수 실증**: `agent_framework.github.GitHubCopilotAgent`(어댑터 README), `MCPStreamableHTTPTool` 시그니처(예제 data.py), `ConcurrentBuilder+aggregator`(예제 workflow.py), apphost.mts API 전체(예제 원문).
+4. 구조화 출력 신뢰성 계단: response_format 시도 → 프롬프트 JSON+Pydantic → 재시도 2회 → **기계적 폴백 평가**(판정 규칙이 기계적이라 코드가 동일 판정 산출, llm_fallback 플래그) — 데모 무중단 보장.
+5. SSE 강화(heartbeat 10s, X-Accel-Buffering: no, nginx proxy_buffering off), 같은 오리진 프록시로 CORS 제거, API 계약·SSE 이벤트·샘플 페이로드 exact 명시, 아바타 타임아웃 90s + gather(return_exceptions), 시간 초과 시 컷 순서표.
+
+→ TRD.md 확정. 검증 이력: IDEATION←GPT-5.6 / PRD←Gemini 3.1 Pro / TRD←GPT-5.3-Codex (작성 Claude).

@@ -59,7 +59,8 @@ graph LR
 
 - **3 레이어**: AI/LLM → Agent Framework · Tools → MCP · Infra → Aspire
 - Aspire AppHost는 **TypeScript(`apphost.mts`)로 작성 가능** (.NET 코드 불필요, aspire CLI만 필요)
-- 배포: `az login` → `aspire deploy` 한 방. Dockerfile/Compose 불필요. Azure Container Apps + scale-to-zero. 삭제는 `aspire destroy`
+- 배포: `az login` → `aspire deploy` 한 방. Azure Container Apps + scale-to-zero. 삭제는 `aspire destroy`
+- **정정(13:55, 강사 예제 repo 실물 확인)**: aspire가 Dockerfile을 자동 생성해주는 게 **아니다**. 강사 예제(battle-school-lunch)도 `src/agent/Dockerfile` 등 **서비스별 명시적 Dockerfile**을 두고 apphost에서 `publishAsDockerFile()`로 연결한다. 우리도 web/agent/mcp Dockerfile 3개 필요 (패턴은 TRD §6 — 예제 복제). docker-compose만 불필요한 것
 - 멀티에이전트 패턴: 전문 에이전트 N개 **Concurrent 실행** → **Judge가 fan-in 종합** (강의 데모와 동일 패턴, 심사항목 1번 직격)
 - 프론트는 에이전트 응답을 **SSE 스트리밍**으로 받아 진행 단계(phase) 표시 → 심사 1번(스트리밍) + 5번(투명성) 동시 공략
 
