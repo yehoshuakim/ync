@@ -44,13 +44,15 @@ function hasAvatarError(errors: FormErrors, ai: number): boolean {
 }
 
 type CollapsibleCardProps = {
+  /** JSX key prop — included to satisfy the TS checker when React types are absent. */
+  key?: string | number | null;
   detailsId: string;
   summaryText: string;
   hasError: boolean;
+  /** When true, imperatively opens the card (used to reveal validation errors on preflight run). */
   forceOpen: boolean;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  children: any;
-  [key: string]: unknown;
+  children: any; // ReactNode — typed loosely because @types/react is unavailable in this tsconfig environment
 };
 
 function CollapsibleCard({ detailsId, summaryText, hasError, forceOpen, children }: CollapsibleCardProps) {
