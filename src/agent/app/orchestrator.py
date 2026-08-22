@@ -257,6 +257,54 @@ async def fetch_redlines(
     return local, False
 
 
+def _ics_escape(value: str) -> str:
+    return value.replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,").replace("\n", "\\n")
+
+
+def _ics_fold(line: str) -> str:
+    if len(line) <= 75:
+        return line
+    chunks = [line[:75]]
+    rest = line[75:]
+    while rest:
+        chunks.append(" " + rest[:74])
+        rest = rest[74:]
+    return "\r\n".join(chunks)
+
+
+def local_ics(args: dict) -> dict:
+    """Same RFC 5545 output as the MCP tool, computed in process.
+
+    Keeps the human-meeting deliverable alive when the MCP service is
+    unreachable, which is a realistic failure mode across container apps.
+    """
+    year, month, day = (int(part) for part in args["date"].split("-"))
+    hour, minute = (int(part) for part in args["time_start"].split(":"))
+    end_hour, end_minute = divmod((hour * 60 + minute + args["duration_min"]) % (24 * 60), 60)
+
+    dtstart = f"{year:04d}{month:02d}{day:02d}T{hour:02d}{minute:02d}00"
+    dtend = f"{year:04d}{month:02d}{day:02d}T{end_hour:02d}{end_minute:02d}00"
+
+    lines = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "PRODID:-//Standin//Meeting Preflight//KO",
+        "CALSCALE:GREGORIAN",
+        "METHOD:PUBLISH",
+        "BEGIN:VEVENT",
+        f"UID:standin-{dtstart}@standin.local",
+        f"DTSTAMP:{dtstart}Z",
+        f"DTSTART;TZID=Asia/Seoul:{dtstart}",
+        f"DTEND;TZID=Asia/Seoul:{dtend}",
+        _ics_fold(f"SUMMARY:{_ics_escape(args['title'])}"),
+        _ics_fold(f"DESCRIPTION:{_ics_escape(args['description'])}"),
+    ]
+    for attendee in args["attendees"]:
+        lines.append(_ics_fold(f"ATTENDEE;CN={_ics_escape(attendee)}:mailto:{attendee.lower()}@example.com"))
+    lines += ["STATUS:CONFIRMED", "END:VEVENT", "END:VCALENDAR"]
+    return {"ics": "\r\n".join(lines) + "\r\n", "filename": "standin-meeting.ics"}
+
+
 async def make_ics(
     outcome: CandidateOutcome, request: RunRequest, mcp_url: str | None
 ) -> IcsFile | None:
@@ -269,14 +317,14 @@ async def make_ics(
         "duration_min": 30,
         "attendees": [avatar.name for avatar in request.avatars],
     }
-    if not mcp_url:
-        return None
-    try:
-        result = await asyncio.wait_for(mcp_client.call_tool(mcp_url, "make_ics", args), timeout=15)
-        return IcsFile(filename=result["filename"], content=result["ics"])
-    except Exception:  # noqa: BLE001
-        logger.warning("make_ics via MCP failed", exc_info=True)
-        return None
+    if mcp_url:
+        try:
+            result = await asyncio.wait_for(mcp_client.call_tool(mcp_url, "make_ics", args), timeout=15)
+            return IcsFile(filename=result["filename"], content=result["ics"])
+        except Exception:  # noqa: BLE001
+            logger.warning("make_ics via MCP failed; using local computation", exc_info=True)
+    result = local_ics(args)
+    return IcsFile(filename=result["filename"], content=result["ics"])
 
 
 def template_briefing(outcomes: list[CandidateOutcome]) -> str:

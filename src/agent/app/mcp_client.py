@@ -11,6 +11,7 @@ import logging
 from typing import Any
 
 from agent_framework import MCPStreamableHTTPTool
+from urllib.parse import urlsplit
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +47,35 @@ def _extract_payload(raw: Any) -> dict[str, Any]:
     raise ValueError(f"unrecognised MCP tool result: {type(raw)!r}")
 
 
+def candidate_urls(url: str) -> list[str]:
+    """Return MCP endpoint candidates, most specific first.
+
+    Azure Container Apps' internal ingress answers HTTPS requests to
+    `https://<app>.internal.<env-domain>` with 421 Misdirected Request for some
+    clients, so fall back to the in-environment plain-HTTP names.
+    """
+    urls = [url]
+    parsed = urlsplit(url)
+    label = parsed.hostname.split(".")[0] if parsed.hostname else ""
+    if parsed.scheme == "https" and ".internal." in (parsed.hostname or ""):
+        for alt in (f"http://{label}{parsed.path}", f"http://{label}:8000{parsed.path}"):
+            if alt not in urls:
+                urls.append(alt)
+    return urls
+
+
 async def call_tool(url: str, name: str, arguments: dict[str, Any], timeout: int = 20) -> dict[str, Any]:
+    last_error: Exception | None = None
+    for candidate in candidate_urls(url):
+        try:
+            return await _call_once(candidate, name, arguments, timeout)
+        except Exception as exc:  # noqa: BLE001 - try every reachable endpoint before giving up
+            last_error = exc
+            logger.warning("MCP call %s failed against %s", name, candidate, exc_info=True)
+    raise last_error if last_error else RuntimeError("no MCP endpoint candidates")
+
+
+async def _call_once(url: str, name: str, arguments: dict[str, Any], timeout: int) -> dict[str, Any]:
     tool = build_tool(url, request_timeout=timeout)
     await tool.connect()
     try:
