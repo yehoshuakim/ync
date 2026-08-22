@@ -25,7 +25,10 @@ Hard deadline today 16:30 KST. Ship a working MVP over perfect code.
 
 - **Microsoft Agent Framework**: agent design, multi-agent orchestration
   (concurrent specialists + judge fan-in), tool calls, streaming.
-- **GitHub Copilot SDK**: model connection layer for the agents.
+- **GitHub Copilot SDK**: the ONLY model connection layer, authenticated
+  as the team account holding the Copilot Max coupon. The service itself
+  calls the LLM through this SDK. Never call other LLM providers or use
+  standalone model API keys.
 - **MCP server**: expose domain tools over Streamable HTTP; agents call
   tools only through MCP.
 - **Aspire (TypeScript AppHost)**: orchestrates all services locally and
@@ -39,6 +42,9 @@ Hard deadline today 16:30 KST. Ship a working MVP over perfect code.
 4. UI must show agent progress transparently (phases, streaming output),
    handle loading/error states, label AI-generated content as such, and be
    responsive (mobile + desktop).
+5. Product bar: a login-free, instant-use service with SaaS-grade polish
+   (think Zapier/Notion). A guest reaches the core feature in one click;
+   sample data is built in.
 
 ## Commands
 
