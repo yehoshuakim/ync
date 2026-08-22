@@ -1,0 +1,115 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-bg: #0b0f17;
+  --color-surface: #141a24;
+  --color-border: #243044;
+  --color-text: #e6edf7;
+  --color-muted: #8fa3bf;
+  --color-accent: #4f8cff;
+  --color-resolved: #2fbf71;
+  --color-contested: #f2b441;
+  --color-rejected: #e5484d;
+
+  --radius-card: 12px;
+
+  --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, 'Apple SD Gothic Neo',
+    'Malgun Gothic', sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+
+  html {
+    color-scheme: dark;
+  }
+
+  body {
+    margin: 0;
+    background-color: var(--color-bg);
+    color: var(--color-text);
+    font-family: var(--font-sans);
+    font-size: 15px;
+    line-height: 24px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1 {
+    font-size: 32px;
+    line-height: 40px;
+    font-weight: 700;
+  }
+
+  h2 {
+    font-size: 20px;
+    line-height: 28px;
+    font-weight: 600;
+  }
+
+  /* Visible 2px accent focus ring (a11y §6.0) */
+  :where(a, button, input, textarea, select, [tabindex]):focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+
+  /* Numbers use mono */
+  input[type='number'] {
+    font-family: var(--font-mono);
+  }
+}
+
+@layer components {
+  .pulse-anim {
+    animation: standin-pulse 1.4s ease-in-out infinite;
+  }
+
+  @keyframes standin-pulse {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.4;
+    }
+  }
+
+  .skeleton {
+    background: linear-gradient(
+      90deg,
+      var(--color-surface) 25%,
+      #1b2431 50%,
+      var(--color-surface) 75%
+    );
+    background-size: 200% 100%;
+    animation: standin-shimmer 1.4s ease-in-out infinite;
+  }
+
+  @keyframes standin-shimmer {
+    0% {
+      background-position: 200% 0;
+    }
+    100% {
+      background-position: -200% 0;
+    }
+  }
+}
+
+/* prefers-reduced-motion disables pulse/shimmer (a11y §6.0) */
+@media (prefers-reduced-motion: reduce) {
+  .pulse-anim,
+  .skeleton {
+    animation: none;
+  }
+}
+
+/* Minimum 44px touch targets */
+button,
+select,
+input,
+textarea {
+  min-height: 44px;
+}
