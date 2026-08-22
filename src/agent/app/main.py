@@ -22,12 +22,14 @@ logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger("standin.agent")
 
 MAX_BODY_BYTES = 8 * 1024
-MAX_RUNS_PER_HOUR = 30
+MAX_RUNS_PER_HOUR = 60
+MAX_CONCURRENT_RUNS = 12
+RATE_LIMIT_RETRY_AFTER_S = 30
 HEARTBEAT_INTERVAL_S = 10.0
 
 _history: dict[str, deque[float]] = defaultdict(deque)
-_in_flight: dict[str, int] = defaultdict(int)
 _guard = asyncio.Lock()
+_concurrency = asyncio.Semaphore(MAX_CONCURRENT_RUNS)
 _model_status = {"model": "unknown"}
 
 
@@ -95,7 +97,12 @@ def client_ip(request: Request) -> str:
 
 async def acquire_slot(ip: str) -> str | None:
     """Abuse guard for a login-free public endpoint. Generous enough that a judge
-    never hits it."""
+    never hits it.
+
+    Per TRD 5.6: concurrency is capped server-wide (asyncio.Semaphore(12)) with
+    NO per-IP concurrent limit, since the 7 judge agents may share one egress IP
+    and run simultaneously. Only the hourly counter is per-IP.
+    """
     now = time.time()
     async with _guard:
         bucket = _history[ip]
@@ -103,16 +110,15 @@ async def acquire_slot(ip: str) -> str | None:
             bucket.popleft()
         if len(bucket) >= MAX_RUNS_PER_HOUR:
             return "rate_limited"
-        if _in_flight[ip] >= 2:
+        if _concurrency.locked():
             return "concurrent_limit"
         bucket.append(now)
-        _in_flight[ip] += 1
+        await _concurrency.acquire()
     return None
 
 
-async def release_slot(ip: str) -> None:
-    async with _guard:
-        _in_flight[ip] = max(0, _in_flight[ip] - 1)
+async def release_slot(ip: str) -> None:  # noqa: ARG001 - kept for call-site symmetry
+    _concurrency.release()
 
 
 def sse(event: str, payload: Any) -> bytes:
@@ -144,7 +150,9 @@ async def agent_run(request: Request) -> Any:
     denied = await acquire_slot(ip)
     if denied:
         return JSONResponse(
-            {"code": denied, "message": "요청이 많습니다. 잠시 후 다시 시도해 주세요."}, status_code=429
+            {"code": denied, "message": "요청이 많습니다. 잠시 후 다시 시도해 주세요."},
+            status_code=429,
+            headers={"Retry-After": str(RATE_LIMIT_RETRY_AFTER_S)},
         )
 
     async def stream() -> AsyncIterator[bytes]:
