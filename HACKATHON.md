@@ -1,6 +1,6 @@
 # 맞다톤 2026 — 팀 작전 브리핑
 
-> 팀: 김현빈(Yehoshua, 팀장) + 이건주(Caleb) + 사무엘(Samuel, GitHub: `J23449595-afk`) · Copilot Max 쿠폰 적용
+> 팀: 김현빈(Yehoshua, 팀장) + 이건주(Caleb) + 사무엘(Samuel, GitHub: `j23559595-afk`) · Copilot Max 쿠폰 적용
 > 마감: **오늘 16:30 제출 마감 (넘기면 자동 탈락)** · 제출 2회 가능, **마지막 제출이 최종 점수**
 > 공식: https://matdaaiga.kr/matdathon → github.com/matdaaiga-kr/matdathon-2026
 
