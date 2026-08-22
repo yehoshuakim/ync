@@ -26,6 +26,7 @@ MAX_RUNS_PER_HOUR = 60
 HEARTBEAT_INTERVAL_S = 10.0
 RETRY_AFTER_S = 30
 GLOBAL_CONCURRENCY = 12
+SEMAPHORE_ACQUIRE_TIMEOUT_S = 1e-6
 
 _history: dict[str, deque[float]] = defaultdict(deque)
 _slots = asyncio.Semaphore(GLOBAL_CONCURRENCY)
@@ -105,14 +106,15 @@ async def acquire_slot(ip: str) -> str | None:
             bucket.popleft()
         if len(bucket) >= MAX_RUNS_PER_HOUR:
             return "rate_limited"
-        if _slots.locked():
+        try:
+            await asyncio.wait_for(_slots.acquire(), timeout=SEMAPHORE_ACQUIRE_TIMEOUT_S)
+        except TimeoutError:
             return "concurrent_limit"
-        await _slots.acquire()
         bucket.append(now)
     return None
 
 
-def release_slot() -> None:
+async def release_slot() -> None:
     _slots.release()
 
 
@@ -176,6 +178,6 @@ async def agent_run(request: Request) -> Any:
                 yield sse(item[0], item[1])
         finally:
             producer.cancel()
-            release_slot()
+            await release_slot()
 
     return StreamingResponse(stream(), media_type="text/event-stream", headers=SSE_HEADERS)

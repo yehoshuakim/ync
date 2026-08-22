@@ -49,16 +49,45 @@ export function InputPanel({
   onLoadSample,
   agendaRef,
 }: Props) {
-  const [candidateOpen, setCandidateOpen] = useState<boolean[]>(() => form.candidates.map(() => false));
-  const [avatarOpen, setAvatarOpen] = useState<boolean[]>(() => form.avatars.map(() => false));
+  const [candidateOpen, setCandidateOpen] = useState<Record<string, boolean>>({});
+  const [avatarOpen, setAvatarOpen] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    setCandidateOpen((prev) =>
+      Object.fromEntries(form.candidates.map((candidate) => [candidate.id, prev[candidate.id] ?? false])),
+    );
+  }, [form.candidates]);
+
+  useEffect(() => {
+    setAvatarOpen((prev) =>
+      Object.fromEntries(
+        form.avatars.map((_, index) => {
+          const key = `avatar-${index}`;
+          return [key, prev[key] ?? false];
+        }),
+      ),
+    );
+  }, [form.avatars.length]);
 
   useEffect(() => {
     if (!showErrors) return;
     setCandidateOpen((prev) =>
-      prev.map((open, index) => open || candidateHasError(errors, index)),
+      Object.fromEntries(
+        form.candidates.map((candidate, index) => [
+          candidate.id,
+          prev[candidate.id] || candidateHasError(errors, index),
+        ]),
+      ),
     );
-    setAvatarOpen((prev) => prev.map((open, index) => open || avatarHasError(errors, index)));
-  }, [errors, showErrors]);
+    setAvatarOpen((prev) =>
+      Object.fromEntries(
+        form.avatars.map((_, index) => {
+          const key = `avatar-${index}`;
+          return [key, prev[key] || avatarHasError(errors, index)];
+        }),
+      ),
+    );
+  }, [errors, form.avatars, form.candidates, showErrors]);
 
   const updateCandidate = (i: number, patch: Partial<FormState['candidates'][number]>) =>
     setForm((prev) => {
@@ -233,11 +262,9 @@ export function InputPanel({
           {form.candidates.map((c, i) => (
             <details
               key={c.id}
-              open={candidateOpen[i]}
+              open={candidateOpen[c.id] ?? false}
               onToggle={(event) =>
-                setCandidateOpen((prev) =>
-                  prev.map((open, index) => (index === i ? event.currentTarget.open : open)),
-                )
+                setCandidateOpen((prev) => ({ ...prev, [c.id]: event.currentTarget.open }))
               }
               className="rounded-xl border"
               style={cardBase}
@@ -314,14 +341,14 @@ export function InputPanel({
           레드라인은 절대 조건입니다. 하나라도 위반하면 그 후보안은 폐기됩니다.
         </p>
         <div className="flex flex-col gap-3">
-          {form.avatars.map((a, ai) => (
+          {form.avatars.map((a, ai) => {
+            const avatarKey = `avatar-${ai}`;
+            return (
             <details
               key={ai}
-              open={avatarOpen[ai]}
+              open={avatarOpen[avatarKey] ?? false}
               onToggle={(event) =>
-                setAvatarOpen((prev) =>
-                  prev.map((open, index) => (index === ai ? event.currentTarget.open : open)),
-                )
+                setAvatarOpen((prev) => ({ ...prev, [avatarKey]: event.currentTarget.open }))
               }
               className="rounded-xl border"
               style={cardBase}
@@ -490,7 +517,8 @@ export function InputPanel({
                 </div>
               </div>
             </details>
-          ))}
+            );
+          })}
         </div>
       </section>
 

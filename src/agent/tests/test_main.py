@@ -108,9 +108,23 @@ class AgentMainTests(unittest.TestCase):
         ) as response:
             body = "".join(response.iter_text())
 
+        async def acquire_all_slots() -> int:
+            acquired = 0
+            for _ in range(main.GLOBAL_CONCURRENCY):
+                await main.asyncio.wait_for(main._slots.acquire(), timeout=0.01)
+                acquired += 1
+            return acquired
+
         self.assertEqual(response.status_code, 200)
         self.assertIn("event: phase", body)
-        self.assertEqual(main._slots._value, main.GLOBAL_CONCURRENCY)
+        loop = main.asyncio.new_event_loop()
+        try:
+            acquired = loop.run_until_complete(acquire_all_slots())
+        finally:
+            loop.close()
+        self.assertEqual(acquired, main.GLOBAL_CONCURRENCY)
+        for _ in range(acquired):
+            main._slots.release()
 
 
 if __name__ == "__main__":
