@@ -1,0 +1,24 @@
+[project]
+name = "standin-agent"
+version = "0.1.0"
+description = "Standin agent service"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "agent-framework-github-copilot==1.0.3",
+  "agent-framework-orchestrations==1.0.1",
+  "fastapi==0.138.0",
+  "pydantic-settings>=2.5",
+  "tzdata>=2026.1",
+  "uvicorn[standard]>=0.32",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.2",
+  "pytest-asyncio>=0.23",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+asyncio_mode = "auto"
