@@ -16,6 +16,11 @@ from urllib.parse import urlsplit
 logger = logging.getLogger(__name__)
 
 
+# Explicit allowlist: the LLM-driven tool call path may only ever reach these two
+# deterministic, side-effect-free tools, regardless of what the MCP server exposes.
+ALLOWED_TOOLS = ("check_redlines", "make_ics")
+
+
 def build_tool(url: str, request_timeout: int = 20) -> MCPStreamableHTTPTool:
     return MCPStreamableHTTPTool(
         "standin-mcp",
@@ -23,6 +28,7 @@ def build_tool(url: str, request_timeout: int = 20) -> MCPStreamableHTTPTool:
         load_prompts=False,
         approval_mode="never_require",
         request_timeout=request_timeout,
+        allowed_tools=ALLOWED_TOOLS,
     )
 
 

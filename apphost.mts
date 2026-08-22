@@ -12,11 +12,16 @@ const copilotToken = await builder.addParameter('copilot-github-token', {
     secret: true,
 });
 
+// PRD 9 / TRD: scale-to-zero would cold-start-timeout a judge's first request,
+// so min replicas is fixed here as code (IaC) instead of a manual az cli step.
 const mcp = await builder
     .addUvicornApp('mcp', './src/mcp', 'app.main:app')
     .withUv()
     .withHttpHealthCheck({ path: '/health' })
-    .withComputeEnvironment(aca);
+    .withComputeEnvironment(aca)
+    .publishAsAzureContainerApp(async (_infrastructure, containerApp) => {
+        await containerApp.configureScale({ minReplicas: 1 });
+    });
 
 const agent = await builder
     .addUvicornApp('agent', './src/agent', 'app.main:app')
@@ -26,7 +31,10 @@ const agent = await builder
     .withReference(mcp)
     .waitFor(mcp)
     .withHttpHealthCheck({ path: '/health' })
-    .withComputeEnvironment(aca);
+    .withComputeEnvironment(aca)
+    .publishAsAzureContainerApp(async (_infrastructure, containerApp) => {
+        await containerApp.configureScale({ minReplicas: 1 });
+    });
 
 // Vite output is build-only, so web ships as an nginx container that serves the
 // bundle and reverse-proxies /agent with SSE buffering disabled (same origin, no CORS).
@@ -37,6 +45,9 @@ await builder
     .withReference(agent)
     .waitFor(agent)
     .withComputeEnvironment(aca)
-    .withExternalHttpEndpoints();
+    .withExternalHttpEndpoints()
+    .publishAsAzureContainerApp(async (_infrastructure, containerApp) => {
+        await containerApp.configureScale({ minReplicas: 1 });
+    });
 
 await builder.build().run();

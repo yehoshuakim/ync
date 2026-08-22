@@ -5,6 +5,15 @@ server {
     root   /usr/share/nginx/html;
     index  index.html;
 
+    # Baseline security headers (Responsible AI / Security & Trust).
+    # No inline scripts/styles are used by the Vite build, so a strict CSP is safe.
+    add_header Content-Security-Policy "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'" always;
+    add_header Strict-Transport-Security "max-age=63072000; includeSubDomains" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+
     # SSE must not be buffered or the whole stream arrives at once at the end.
     location /agent/ {
         proxy_pass         __AGENT_UPSTREAM__/agent/;
