@@ -22,11 +22,13 @@ logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger("standin.agent")
 
 MAX_BODY_BYTES = 8 * 1024
-MAX_RUNS_PER_HOUR = 30
+MAX_RUNS_PER_HOUR = 60
 HEARTBEAT_INTERVAL_S = 10.0
+RETRY_AFTER_S = 30
+GLOBAL_CONCURRENCY = 12
 
 _history: dict[str, deque[float]] = defaultdict(deque)
-_in_flight: dict[str, int] = defaultdict(int)
+_slots = asyncio.Semaphore(GLOBAL_CONCURRENCY)
 _guard = asyncio.Lock()
 _model_status = {"model": "unknown"}
 
@@ -103,16 +105,15 @@ async def acquire_slot(ip: str) -> str | None:
             bucket.popleft()
         if len(bucket) >= MAX_RUNS_PER_HOUR:
             return "rate_limited"
-        if _in_flight[ip] >= 2:
+        if _slots.locked():
             return "concurrent_limit"
+        await _slots.acquire()
         bucket.append(now)
-        _in_flight[ip] += 1
     return None
 
 
-async def release_slot(ip: str) -> None:
-    async with _guard:
-        _in_flight[ip] = max(0, _in_flight[ip] - 1)
+def release_slot() -> None:
+    _slots.release()
 
 
 def sse(event: str, payload: Any) -> bytes:
@@ -144,7 +145,9 @@ async def agent_run(request: Request) -> Any:
     denied = await acquire_slot(ip)
     if denied:
         return JSONResponse(
-            {"code": denied, "message": "요청이 많습니다. 잠시 후 다시 시도해 주세요."}, status_code=429
+            {"code": denied, "message": "요청이 많습니다. 잠시 후 다시 시도해 주세요."},
+            status_code=429,
+            headers={"Retry-After": str(RETRY_AFTER_S)},
         )
 
     async def stream() -> AsyncIterator[bytes]:
@@ -173,6 +176,6 @@ async def agent_run(request: Request) -> Any:
                 yield sse(item[0], item[1])
         finally:
             producer.cancel()
-            await release_slot(ip)
+            release_slot()
 
     return StreamingResponse(stream(), media_type="text/event-stream", headers=SSE_HEADERS)
