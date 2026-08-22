@@ -89,9 +89,13 @@ result = await avatar.run(prompt)   # 응답 텍스트 → JSON 파싱 → Pydan
 - **폴백 (Gate 0에서 GitHubCopilotAgent가 ConcurrentBuilder와 조합 실패 시 15분 내 전환)**:
   `asyncio.gather(*[run_avatar(a) for a in avatars], return_exceptions=True)` — 동일 데이터 모델, 동일 출력.
   GitHubCopilotAgent 자체가 AF 에이전트이므로 이 경로도 AF 사용임.
-- 공통 정책: 아바타별 타임아웃 90초, 실패/타임아웃/파싱불가 → **기계적 폴백 평가**
+- 공통 정책 — **하나의 전체 마감(overall deadline) 45초**:
+  아바타별 타임아웃 25초, 재시도 1회(총 2회 시도), 퍼실리테이터 10초.
+  `asyncio.wait_for(run_all(), timeout=45)`로 감싸고, 45초를 넘기면 남은 아바타는
+  즉시 **기계적 폴백 평가**로 채워 SSE `final`을 반드시 45초 안에 보낸다.
   (판정 규칙이 기계적이므로 코드가 카드+숫자만으로 동일 판정 산출, evidence는 수치 인용 템플릿,
-  `llm_fallback: true` 플래그). **데모는 어떤 경우에도 죽지 않는다.**
+  `llm_fallback: true` 플래그 + UI에 `규칙 기반 대체` 칩). **데모는 어떤 경우에도 죽지 않는다.**
+  PRD의 "30~60초 내 결과" 약속과 nginx `proxy_read_timeout`은 이 45초에 맞춘다.
 
 ### 3.3 구조화 출력 (신뢰성 계단)
 
@@ -133,12 +137,17 @@ mcp_tool = MCPStreamableHTTPTool("standin-mcp", settings.mcp_url,
 | `POST /agent/run` | agent | 본 실행. 응답 = SSE 스트림 (`text/event-stream`) |
 | `GET /health` | 셋 다 | `{status:"ok", model:"ok"\|"fail"(agent만)}` |
 
-### 5.2 `POST /agent/run` 요청 (Pydantic 검증: 문자열 길이 ≤500, 숫자 0~100, 후보 정확히 3, 아바타 정확히 3)
+### 5.2 `POST /agent/run` 요청
+
+Pydantic 검증 (프론트엔드 검증과 **정확히 동일**해야 함):
+`agenda` 1~500자 / `expected_minutes` 5~240 정수 / `attendees` 1~20 정수 /
+후보 필드 숫자 0~100 정수 / 후보 정확히 3개 / 아바타 정확히 3명 /
+아바타 이름·역할 1~40자 / 요청 본문 ≤ 8KB.
 
 ```json
 {
   "agenda": "다음 스프린트 기능 우선순위",
-  "expected_minutes": 60, "attendees": 3,
+  "expected_minutes": 30, "attendees": 3,
   "candidates": [
     {"id":"A","name":"간편 온보딩","fields":{"dev_days":6,"revenue_impact":3,"ux_impact":5,"tech_debt":2}},
     {"id":"B","name":"결제 연동","fields":{"dev_days":9,"revenue_impact":5,"ux_impact":2,"tech_debt":3}},
@@ -146,25 +155,44 @@ mcp_tool = MCPStreamableHTTPTool("standin-mcp", settings.mcp_url,
   ],
   "avatars": [
     {"name":"Yehoshua","role":"COO","top_priority":"revenue_impact","hard_constraints":[{"field":"dev_days","op":"<=","value":10}]},
-    {"name":"Caleb","role":"Developer","top_priority":"tech_debt","hard_constraints":[{"field":"tech_debt","op":"<=","value":4}]},
+    {"name":"Caleb","role":"Developer","top_priority":"tech_debt","hard_constraints":[{"field":"dev_days","op":"<=","value":10},{"field":"tech_debt","op":"<=","value":3}]},
     {"name":"Samuel","role":"Designer","top_priority":"ux_impact","hard_constraints":[{"field":"ux_impact","op":">=","value":2}]}
   ]
 }
 ```
 
-(위 값이 그대로 "샘플로 시작" 프리셋. 기대 결과: A=RESOLVED, B=CONTESTED(Samuel 우려), C=REJECTED — PRD §4와 동일해야 함.)
+**이 JSON이 유일한 정본 픽스처(canonical fixture)다.** 프론트엔드 프리셋,
+백엔드 기본값, 테스트가 모두 이 파일 하나(`fixtures/sample_run.json`)를 읽는다.
+
+필드 방향(고정): `revenue_impact`·`ux_impact` = 높을수록 좋음,
+`dev_days`·`tech_debt` = 낮을수록 좋음.
+우려(ACCEPT_WITH_CONCERNS) 조건 = 높을수록 좋은 top_priority 필드가 ≤2,
+또는 낮을수록 좋은 top_priority 필드가 ≥4. (PRD §4와 동일)
+
+기대 결과: **A=RESOLVED** (Yehoshua rev 3>2, Caleb td 2<4, Samuel ux 5>2 → 전원 plain ACCEPT) /
+**B=CONTESTED** (Samuel ux=2 ≤2 → 우려) /
+**C=REJECTED** (dev_days 12>10 → Yehoshua·Caleb 위반, tech_debt 4>3 → Caleb 위반).
 
 ### 5.3 SSE 이벤트 (POST라 EventSource 불가 → fetch ReadableStream 파싱)
 
 ```text
 event: phase          data: {"phase":"received|evaluating|verdict|briefing|done|error"}
-event: avatar_result  data: AvatarEval (아바타 완료마다 1건)
-event: heartbeat      data: {}          (10초마다 — 프록시 idle timeout 방지)
+event: avatar_delta   data: {"avatar":"Caleb","text":"..."}   (모델 토큰 델타 — AF 스트리밍 증거)
+event: tool_call      data: {"avatar":"Caleb","tool":"check_redlines","status":"start|ok|fail"}
+event: avatar_result  data: AvatarEval   (아바타 1명 완료 = 후보 3개 평가 전부 포함)
+event: heartbeat      data: {}           (10초마다 — 프록시 idle timeout 방지)
+event: error          data: {"code":"...","message":"..."}
 event: final          data: RunResult
 ```
 
+SSE 파싱은 **청크 경계를 넘는 프레임**을 반드시 처리한다 (버퍼에 누적 후
+`\n\n` 단위로 분리). 클라이언트 연결이 끊기면 서버는 실행을 취소한다
+(`AbortController` → `request.is_disconnected()`).
+
 응답 헤더: `Content-Type: text/event-stream`, `Cache-Control: no-cache`,
-`X-Accel-Buffering: no`. nginx 프록시에 `proxy_buffering off; proxy_read_timeout 300s;`.
+`Connection: keep-alive`, `X-Accel-Buffering: no`.
+nginx 프록시: `proxy_buffering off; proxy_cache off; proxy_read_timeout 90s;`
+(§3.2의 45초 전체 마감 + 여유).
 
 ### 5.4 데이터 모델 (단일 소스 `src/agent/app/models.py`, `src/web/src/types.ts` 미러)
 
@@ -189,22 +217,89 @@ type RunResult = { outcomes:CandidateOutcome[]; briefing_md:string; decision_rec
 `check_redlines` 결과 기준: 하드 위반 1개↑ → REJECTED / 하드 전원통과 + 아바타 전원 plain ACCEPT → RESOLVED / 하드 전원통과 + 우려 1개↑ → CONTESTED (익일 10:00 KST 30분 회의 .ics 생성).
 LLM 판정과 코드 판정 불일치 → 코드 우선 + `needs_review: true`.
 
-## 6. 컨테이너화 — **Dockerfile 없이 간다** (F7)
+### 5.6 Rate limit & 남용 방지 — **심사자 차단 금지가 최우선**
 
-- **기본 경로(1순위, 이것으로 구현할 것)**: Dockerfile을 만들지 않는다.
-  apphost에서 `addUvicornApp(...).withUv()` / `addViteApp(...)`만 선언하면
-  Aspire 13이 배포 시 컨테이너 이미지를 자동 생성한다 (uv 의존성 설치 + uvicorn 진입점 포함).
-  원샷 빌드에서 파일 수를 줄이는 것이 성공률에 직결되므로 이 경로를 택한다.
+7개 심사 에이전트가 **같은 egress IP에서 동시에** 접속할 수 있다. 여기서
+429가 뜨면 규칙 7 위반으로 전 항목 1점이다. 따라서 한도는 넉넉하게 잡는다.
+
+| 항목 | 값 | 이유 |
+|------|-----|------|
+| 동시 실행 | 서버 전체 **12개** (IP별 제한 없음) | 심사 에이전트 동시 접속 허용 |
+| IP당 시간당 실행 | **60회** | 사람이 손으로 넘길 수 없는 수준 |
+| 요청 본문 | ≤ 8KB | 프롬프트 폭탄 차단 |
+| 초과 시 | HTTP 429 + `Retry-After: 30` 헤더 | 클라이언트가 재시도 가능 |
+
+인메모리 카운터(`collections.deque` of timestamps per IP) + `asyncio.Semaphore(12)`.
+IP는 `X-Forwarded-For`의 첫 값(없으면 `request.client.host`).
+**"1분에 한 번" 같은 문구를 UI/코드 어디에도 넣지 않는다.**
+
+## 6. 컨테이너화 — agent/mcp는 자동, **web만 Dockerfile 확정** (F7)
+
+모순을 없애기 위해 **경로를 하나로 확정한다.** 구현자는 아래대로만 한다.
+
+- **agent, mcp = Dockerfile 없음.** apphost에서 `addUvicornApp(...).withUv()`만
+  선언하면 Aspire 13이 배포 시 컨테이너 이미지를 자동 생성한다
+  (uv 의존성 설치 + uvicorn 진입점 포함). 파일 수를 줄여 원샷 성공률을 올린다.
+- **web = Dockerfile + nginx 템플릿 필수(선택 아님).** SSE 버퍼링을 끄지 못하면
+  결과가 한 번에 몰려 오거나 아예 안 보인다. 자동 생성 이미지로는 nginx 설정을
+  제어할 수 없으므로 web만 명시적으로 만든다.
 - **아키텍처 주의 (Apple Silicon 필수)**: ACA는 linux/amd64. `aspire deploy`가 로컬 docker 빌드를 쓰므로
   M-시리즈 맥에서는 배포 전 `export DOCKER_DEFAULT_PLATFORM=linux/amd64`.
   amd64로 빌드해야 uv가 x86_64 wheel(=x86_64 Copilot CLI 바이너리, F3)을 설치한다. **이건 Dockerfile 유무와 무관하게 필요.**
-- **폴백 (자동 빌드가 실패할 때만)**: 강사 예제 패턴으로 서비스별 Dockerfile 추가 +
-  apphost에서 `.publishAsDockerFile(c => c.withDockerfile('./src', {dockerfilePath:'agent/Dockerfile'}))`.
+- **폴백 (agent/mcp 자동 빌드가 실패할 때만)**: 강사 예제 패턴으로 Dockerfile 추가 +
+  `.publishAsDockerFile(c => c.withDockerfile('./src', {dockerfilePath:'agent/Dockerfile'}))`.
   예제 패턴 = `python:3.12-slim-bookworm` 멀티스테이지, `COPY --from=ghcr.io/astral-sh/uv:0.11.32 /uv /usr/local/bin/uv`,
   non-root appuser, `EXPOSE 8000`, `uvicorn app.main:app --host 0.0.0.0 --port ${PORT}`.
-- web은 Vite 빌드 산출물을 nginx로 서빙. `/agent/`를 AGENT_UPSTREAM으로 프록시하며
-  **SSE 때문에 `proxy_buffering off; proxy_read_timeout 300s;` 필수** (§5.3).
-  nginx 설정 커스터마이즈가 필요하므로 **web만은 Dockerfile+nginx.conf를 둘 수 있다** (자동 생성이 SSE 버퍼링을 못 끄면).
+
+### 6.1 `src/web/Dockerfile`
+
+```dockerfile
+FROM node:22-alpine AS build
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
+
+FROM nginx:1.27-alpine
+COPY --from=build /app/dist /usr/share/nginx/html
+COPY nginx.conf.template /etc/nginx/templates/default.conf.template
+ENV PORT=8080
+EXPOSE 8080
+```
+`nginx:alpine`은 `/etc/nginx/templates/*.template`를 시작 시 `envsubst`로
+치환해 `/etc/nginx/conf.d/`에 쓴다 → `AGENT_UPSTREAM`을 런타임 주입할 수 있다.
+
+### 6.2 `src/web/nginx.conf.template`
+
+```nginx
+server {
+  listen ${PORT};
+  server_name _;
+  root /usr/share/nginx/html;
+
+  add_header X-Content-Type-Options nosniff always;
+  add_header X-Frame-Options DENY always;
+  add_header Referrer-Policy no-referrer always;
+
+  location /health { return 200 "ok\n"; add_header Content-Type text/plain; }
+
+  location /agent/ {
+    proxy_pass ${AGENT_UPSTREAM}/agent/;
+    proxy_http_version 1.1;
+    proxy_set_header Connection '';
+    proxy_buffering off;
+    proxy_cache off;
+    proxy_read_timeout 90s;
+    chunked_transfer_encoding off;
+  }
+
+  location / { try_files $uri $uri/ /index.html; }
+}
+```
+`AGENT_UPSTREAM`은 apphost가 `agent.getEndpoint('http')`로 주입 → ACA 내부
+서비스 디스커버리 주소. **agent는 internal ingress, web만 external ingress.**
+브라우저는 web 오리진만 보므로 **CORS 자체가 발생하지 않는다.**
 
 ## 7. apphost.mts (예제 원문 API만 사용, F8 — Foundry 블록 전부 제거)
 
@@ -231,15 +326,24 @@ const agent = await builder.addUvicornApp('agent', './src/agent', 'app.main:app'
 await builder.addViteApp('web', './src/web')
   .withEnvironment('AGENT_UPSTREAM', agent.getEndpoint('http'))
   .withReference(agent).waitFor(agent)
-  .withComputeEnvironment(aca).withExternalHttpEndpoints();
+  .withComputeEnvironment(aca)
+  .publishAsDockerFile(c => c.withDockerfile('./src/web'))
+  .withExternalHttpEndpoints();
 
 await builder.build().run();
 ```
 
-Dockerfile 선언(`publishAsDockerFile`)은 넣지 않는다 — Aspire가 자동 컨테이너화(§6).
-자동 빌드 실패 시에만 §6 폴백을 적용.
+- **agent/mcp**: `publishAsDockerFile` 없음 → Aspire 자동 컨테이너화(§6).
+  external ingress를 주지 않으므로 **internal ingress**로 남는다(공개 노출 없음).
+- **web**: `publishAsDockerFile`로 §6.1 Dockerfile 사용 → nginx SSE 설정 확보.
+  **유일한 external ingress = 심사자가 받는 HTTPS URL.**
+- **콜드스타트 금지**: 배포 후 Azure Portal → 각 Container App → Scale에서
+  **최소 복제본(min replicas) = 1**로 설정 (web, agent 필수). 심사 중 스케일-투-제로로
+  첫 요청이 타임아웃 나는 것을 막는다. (`az containerapp update -n <app> -g <rg> --min-replicas 1`)
 
 `.env`(gitignore): `COPILOT_GITHUB_TOKEN=...` — apphost가 `loadEnvFile`로 읽어 secret parameter로 주입.
+토큰은 **절대** 응답 본문·로그·에러 상세·web 빌드 산출물에 들어가지 않는다
+(agent는 기동 시 토큰 부재를 감지하면 `/health`에 `model:"fail"`을 반환하되 토큰 값 자체는 출력하지 않는다).
 
 ## 8. 실행 & 배포 (단일 승인 경로)
 
@@ -282,4 +386,4 @@ aspire deploy
 | 판정은 코드, LLM은 평가·브리핑만 | 타협안 발명 방지 (책임 AI 6%) | 아바타는 자유 협상자가 아님 |
 | 기계적 폴백 평가 | 데모 무중단 (완성도 16%) | 폴백 시 evidence가 템플릿 문체 |
 | 같은 오리진 프록시 (CORS 미사용) | 설정 실수 원천 차단 | nginx 설정 1블록 추가 |
-| 인메모리 rate limit (8KB/1동시/10회·h·IP) | 무로그인 공개 엔드포인트 가드, DB 없이 | 재시작 시 리셋(허용) |
+| 인메모리 rate limit — **심사자 우선 설정** (§5.6) | 무로그인 공개 엔드포인트 가드, DB 없이 | 재시작 시 리셋(허용) |

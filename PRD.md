@@ -86,13 +86,21 @@ selection, constraint **values** (constraint format is fixed
 
 **Avatar verdict rules (mechanical — goes into each avatar's instructions):**
 
+Field direction is fixed and MUST be respected:
+`revenue_impact`, `ux_impact` = **higher is better**;
+`dev_days`, `tech_debt` = **lower is better**.
+
 1. If a candidate violates any of YOUR hard constraints → `REJECT`,
    citing the constraint.
 2. If all your hard constraints pass → you MUST return `ACCEPT`.
    Never reject for soft-priority reasons.
-3. When accepting, if the candidate scores ≤ 2 on your top-priority field →
-   return `ACCEPT_WITH_CONCERNS` and state the concern in evidence.
-4. Evidence may only quote fields present in the input. No invented facts.
+3. When accepting, raise a concern (`ACCEPT_WITH_CONCERNS`) **only** when your
+   top-priority field is weak in its own direction:
+   - higher-is-better field (`revenue_impact` / `ux_impact`) and value **≤ 2**
+   - lower-is-better field (`dev_days` / `tech_debt`) and value **≥ 4**
+   Otherwise return plain `ACCEPT`.
+4. Evidence may only cite fields present in the input, as
+   `{field, value}` structured citations. No invented facts, no outside knowledge.
 
 **Verdict computation (app code, authoritative — not the LLM):**
 
@@ -105,15 +113,20 @@ selection, constraint **values** (constraint format is fixed
 - If an avatar's verdict contradicts the deterministic check, the code wins
   and the item is tagged "확인 필요".
 
-**Expected sample outcome** (guaranteed by the rules above):
-- A: all hard pass, no field ≤ 2 on anyone's top priority → **RESOLVED**.
-- B: hard passes (Samuel's `ux_impact >= 2` barely holds), but
-  `ux_impact = 2` triggers Samuel's concern → **CONTESTED**
+**Expected sample outcome** (guaranteed by the rules above — this is the demo
+contract; if a build does not reproduce it exactly, the build is wrong):
+- **A 간편 온보딩**: hard constraints all pass. Yehoshua rev=3 (>2, ok),
+  Caleb tech_debt=2 (<4, ok), Samuel ux=5 (>2, ok) → 3× plain ACCEPT →
+  **RESOLVED**.
+- **B 결제 연동**: hard passes (Samuel's `ux_impact >= 2` barely holds), but
+  ux_impact=2 ≤ 2 on Samuel's top-priority field → Samuel
+  `ACCEPT_WITH_CONCERNS` → **CONTESTED**
   (사유: 매출 최고안이지만 UX 저하 우려 — 트레이드오프는 사람 판단)
   → human-meeting `.ics` (next day 10:00, fixed).
-- C: `dev_days 12 > 10` violates Yehoshua & Caleb → **REJECTED**.
-- Time receipt: "예상 90 person-minutes → 실측 실행 {measured}초.
-  잠재 절감 추정치이며 검토 비용은 포함하지 않습니다."
+- **C 관리자 대시보드**: `dev_days 12 > 10` violates Yehoshua's and Caleb's
+  redlines → **REJECTED**.
+- Time receipt: see §7 for the exact honest wording (no direct
+  "90 person-minutes → 20 seconds" savings claim).
 
 ## 5. Features
 
@@ -229,8 +242,12 @@ Single page (`/`), two zones. No routing, no modal except the approval confirm.
    Horizontally scrollable on mobile.
 6. **브리핑** — facilitator's Korean markdown, in a card labeled
    `AI 생성 브리핑 — 사실은 입력값 인용만 합니다`.
-7. **시간 영수증** — `예상 90 인·분 → 실측 {n}초`, and below in muted 13px:
-   `잠재 절감 추정치이며 검토 비용은 포함하지 않습니다.`
+7. **시간 영수증** — 4줄, 절감량을 직접 주장하지 않는다:
+   `기준 회의 부담: 3명 × 30분 = 90 인·분`
+   `자동 사전검토: 후보 3개 × 관점 3개 = 9건`
+   `사람 논의 필요: 3건 중 1건`
+   `시스템 처리 시간: {n}초`
+   muted 13px: `실제 절감 시간은 측정하지 않았으며, 검토 시간은 포함되지 않습니다.`
 8. **승인 게이트** — `[초안 승인]` (primary). Opens a confirm dialog:
    title `초안을 승인할까요?`, body
    `승인하면 결정 기록과 회의 초대(.ics) 파일을 내려받습니다. AI가 만든 초안이므로 내용을 확인한 뒤 사용하세요.`,
@@ -242,9 +259,23 @@ Single page (`/`), two zones. No routing, no modal except the approval confirm.
 **Error state** — red banner replacing Zone B content:
 `평가에 실패했습니다. 잠시 후 다시 시도해 주세요.` + `[다시 시도]` +
 collapsible `자세히` with the error code. Rate-limited (HTTP 429):
-`잠시 후 다시 시도해 주세요. (1분에 한 번만 실행할 수 있습니다)`.
+`요청이 많습니다. 잠시 후 다시 시도해 주세요.`
 Partial-failure never blanks the screen — a failed avatar renders with the
 rule-based fallback notice and the run completes.
+
+### 6.4 Provenance labels (criterion 6 — do NOT label everything "AI")
+
+Each result block carries one source chip:
+
+| Chip | Applies to |
+|------|-----------|
+| `AI 평가` | avatar evaluations, facilitator briefing |
+| `MCP 검증` | redline pass/fail cells |
+| `앱 코드 판정` | RESOLVED / CONTESTED / REJECTED verdicts |
+| `규칙 기반 대체` | any avatar that fell back (model timeout/parse failure) |
+
+Header badge stays `AI 생성 결과 — 검토 후 사용하세요`.
+Footer line: `입력값은 서버에 저장되지 않습니다. 실행이 끝나면 메모리에서 사라집니다.`
 
 ## 7. Success criteria (mapped to judging)
 
@@ -274,9 +305,37 @@ rule-based fallback notice and the run completes.
 
 | Risk | Mitigation |
 |------|------------|
-| Copilot SDK non-interactive auth fails on Azure | Verify SDK auth + one real model call FIRST (before UI); TRD locks the auth method; fallback = keep demo on local-verified deploy path |
-| Model latency > 30 s | Concurrent avatars; SSE keeps progress visible; per-agent timeout + retry |
-| Judge AI can't find the feature | [샘플로 시작] on the hero; zero-friction path; no login |
+| Copilot SDK non-interactive auth fails on Azure | Verify SDK auth + one real model call FIRST (before UI); TRD locks the auth method. **A local-only demo is NOT a valid submission** — do not submit until a real Copilot call succeeds inside Azure Container Apps (`/health` returns `model: ok` on the deployed URL) |
+| Model latency > 30 s | Concurrent avatars; SSE keeps progress visible; **single 45-second overall deadline**, after which the rule-based fallback completes the run |
+| Judge AI can't find the feature | [샘플로 시작] on the hero; sample pre-filled on first paint; no login |
 | LLM invents facts/compromises | Unanimous-ACCEPT rule in code; `check_redlines` deterministic re-check; facilitator quote-only rule; "확인 필요" tag for unsupported claims |
-| Public endpoint abuse (no login) | Input length caps, per-IP rate limit, single concurrent run per session |
+| Public endpoint abuse (no login) | Input length caps + generous per-IP limits (see §9) — abuse guard must never block judges |
 | Late deployment failure | First deploy by 15:00, iterate after; deploy commands recorded in TRD |
+
+## 9. Judge & automated-agent accessibility (rule 7 compliance)
+
+This service is designed so that an automated agent can evaluate it with **zero
+setup**. Explicit guarantees:
+
+- **No authentication of any kind.** No login, signup, guest account, session
+  cookie, `localStorage`, API key, invite code, CAPTCHA, cookie banner, age
+  gate, or geographic restriction. Avatars are **form data for a single run**,
+  held in memory for the duration of that request only; nothing is persisted
+  and no user identity exists. `COPILOT_GITHUB_TOKEN` is a server-side
+  deployment secret and is never requested from, or exposed to, the browser.
+- **Zero-click readiness.** The sample preset is already populated when the page
+  first paints, so the core feature runs without typing anything.
+- **Judge-safe limits.** Rate limiting exists only to stop abuse and must not
+  block evaluation: **≥ 10 concurrent runs** and **60 runs/hour per IP**
+  (the 7 judge agents may share one egress IP and run simultaneously).
+  429 responses include `Retry-After`.
+- **No cold start during judging.** Container Apps minimum replicas = 1 for
+  `web` and `agent` (scale-to-zero is disabled) so the first request is not a
+  timeout.
+- **Deterministic outcome.** The sample always resolves to A=RESOLVED,
+  B=CONTESTED, C=REJECTED, so an automated reviewer sees the full feature set
+  in one run even if the model is slow (rule-based fallback preserves the same
+  verdicts).
+- **Verification before submission**: open the deployed URL in a fresh
+  incognito window on mobile data (no cookies, no headers, no prior state) and
+  complete one run.

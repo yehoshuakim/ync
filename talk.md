@@ -246,3 +246,51 @@ PRD 초안 작성 후 검증에서 발견된 오류와 수정:
 5. SSE 강화(heartbeat 10s, X-Accel-Buffering: no, nginx proxy_buffering off), 같은 오리진 프록시로 CORS 제거, API 계약·SSE 이벤트·샘플 페이로드 exact 명시, 아바타 타임아웃 90s + gather(return_exceptions), 시간 초과 시 컷 순서표.
 
 → TRD.md 확정. 검증 이력: IDEATION←GPT-5.6 / PRD←Gemini 3.1 Pro / TRD←GPT-5.3-Codex (작성 Claude).
+
+---
+
+## [15:02] 컴플라이언스 감사 반영 — 심사자 접근성 확정
+
+현빈 질문: "azure portal로 배포해서 링크 올리면 채점 AI가 다 훑을 수 있게 만든 거야?
+로그인 필요없게 한 거 맞지?"
+
+GPT-5.6 Sol 컴플라이언스 감사 결과, **로그인은 없지만 심사 AI를 막을 수 있는 함정 3개**를
+발견해서 즉시 수정했다.
+
+**P0 — 심사자 차단 위험 (규칙 7 = 전 항목 1점)**
+1. rate limit이 `1분에 1회 / IP당 10회·시간 / 동시 1건`이었다. 심사 에이전트 7대가
+   같은 egress IP로 동시에 들어오면 429로 막힌다.
+   → **서버 전체 동시 12건 / IP당 시간당 60회 / Retry-After 헤더**로 완화 (TRD §5.6).
+   UI에서 "1분에 한 번" 문구도 삭제.
+2. ACA 스케일-투-제로 → 첫 접속 콜드스타트 타임아웃 위험.
+   → web·agent **min replicas = 1** 고정, BUILD.md §5.1에 명령 추가.
+3. web→agent 프록시가 미정의여서 "화면은 뜨는데 실행이 안 되는" 배포가 나올 수 있었다.
+   → **web만 Dockerfile + nginx.conf.template 확정**(TRD §6.1/6.2), agent·mcp는 Aspire 자동.
+   agent는 internal ingress, web만 external → CORS 자체가 발생하지 않음.
+
+**P0 — 데모 논리 오류**
+4. "top_priority 값 ≤2면 우려" 규칙이 `tech_debt`(낮을수록 좋음)에 잘못 적용돼
+   A안이 RESOLVED가 아니라 CONTESTED로 나온다. 샘플 데모가 깨진다.
+   → **필드 방향 고정**: revenue_impact·ux_impact는 높을수록 좋음,
+   dev_days·tech_debt는 낮을수록 좋음. 우려 조건 = 높을수록좋음 ≤2 또는 낮을수록좋음 ≥4.
+   재검산: A=RESOLVED / B=CONTESTED(Samuel ux=2) / C=REJECTED ✅
+
+**P0 — BUILD.md 실행 실패 2건**
+5. 저장소 루트가 곧 `ync`인데 `cd ync/matdathon`으로 적혀 있었다. → `cd ync`로 정정,
+   프롬프트 내 경로도 `PRD.md`/`TRD.md`로 수정.
+6. 토큰 생성이 원샷 프롬프트 **뒤**에 있었다. Gate 0이 토큰 없이는 통과 못 하므로
+   에이전트가 첫 관문에서 멈춘다. → `.env` 생성을 §0으로 이동.
+
+**추가 정합성 수정**
+- 타임아웃 3중 모순(30초/90초×재시도/300초) → **전체 마감 45초 단일화**.
+- 샘플 픽스처 PRD/TRD 불일치(60분 vs 30분, Caleb 제약) → 정본 픽스처 1개로 통일.
+- 검증 범위 불일치(회의시간 240 vs 숫자 0~100) → 필드별 범위 분리 명시.
+- SSE에 `avatar_delta`·`tool_call`·`error` 이벤트 추가(AF/MCP 사용 증거 가시화).
+- 출처 라벨 분리: AI 평가 / MCP 검증 / 앱 코드 판정 / 규칙 기반 대체.
+- 프롬프트 인젝션: 태그 감싸기만으로는 `</user_input>` 주입을 못 막으므로 XML 이스케이프 의무화.
+- 퍼실리테이터 마크다운 XSS 차단(이스케이프 렌더).
+- "로컬 검증 배포 경로" 폴백 삭제 — **로컬 데모는 제출 자격 없음**으로 명문화.
+
+**결론(현빈 질문 답)**: 로그인·가입·세션·쿠키·localStorage·API키 입력 전부 없음.
+아바타는 1회 실행용 폼 데이터이고 서버에 저장하지 않는다. 배포 URL만 있으면
+심사 AI가 클릭 1번으로 전 기능을 볼 수 있다. PRD §9에 이 보장을 명문화했다.
