@@ -143,15 +143,108 @@ selection, constraint **values** (constraint format is fixed
   no 24/7 board (roadmap only).
 - No multi-language UI; Korean only.
 
-## 6. Screens
+## 6. Screens — build spec (exact copy & states; Korean UI)
 
-| Screen | Purpose | Key elements |
-|--------|---------|--------------|
-| Home | input + run | hero: "당신의 아바타가 먼저 회의합니다" + one-line explainer; [샘플로 시작] primary button; agenda field; candidate cards with typed field chips; 3 avatar cards (editable); [프리플라이트 실행] button |
-| Run/Result | watch + outcome | phase stepper; 3 avatar evaluation cards streaming; verdict matrix; consensus draft card; contested items card (with 사유); time receipt; [초안 승인] → download `.md` + `.ics`; error banner + retry |
+Single page (`/`), two zones. No routing, no modal except the approval confirm.
+**No login, no onboarding, no cookie banner** — the page is usable in 0 clicks.
 
-Responsive: single column on mobile, two columns ≥ 1024px. Accessibility:
-aria labels on stepper/cards/buttons, focus states, sufficient contrast.
+### 6.0 Design system
+
+- Palette: bg `#0B0F17`, surface `#141A24`, border `#243044`, text `#E6EDF7`,
+  muted `#8FA3BF`, accent `#4F8CFF`; status: RESOLVED `#2FBF71`,
+  CONTESTED `#F2B441`, REJECTED `#E5484D`.
+- Type: system sans; h1 32/40 bold, h2 20/28 semibold, body 15/24, mono for numbers.
+- Radius 12, spacing scale 4/8/12/16/24/32, 1px borders. Dark theme only.
+- Responsive: `<768px` single column, cards stack, matrix becomes horizontally
+  scrollable (`overflow-x:auto`, sticky first column); `≥1024px` two columns
+  (left input 5fr / right result 7fr). Touch targets ≥ 44px.
+- Accessibility: every interactive element has an accessible name;
+  phase stepper is `role="status" aria-live="polite"`; verdict matrix is a real
+  `<table>` with `<th scope>`; status conveyed by **text + icon**, never color
+  alone; visible focus ring (2px accent); `prefers-reduced-motion` disables
+  the pulse animation.
+
+### 6.1 Header
+
+- Left: wordmark **Standin** + tagline `아바타가 먼저 회의합니다`.
+- Right: badge `AI 생성 결과 — 검토 후 사용하세요` (always visible, criterion 6).
+
+### 6.2 Zone A — 입력 (left)
+
+1. **Hero** — h1 `당신의 아바타가 먼저 회의합니다`,
+   sub `조율형 안건을 아바타 3인이 각자 평가하고, 전원 통과한 안만 합의 초안이 됩니다. 충돌한 안건만 사람이 만납니다.`
+2. **Primary CTA** — `[샘플로 시작]` (accent, full-width). Click = load the
+   §4 preset into all fields **and immediately run** the preflight.
+   Secondary text button `직접 입력하기` just focuses the agenda field.
+   > The sample preset is **pre-filled on first paint** so a judge agent can hit
+   > `[프리플라이트 실행]` with zero typing. `[샘플로 시작]` merely re-loads + runs.
+3. **안건** — textarea, label `안건`, placeholder
+   `예) 9월 스프린트: 다음 2주 동안 무엇을 먼저 만들까?`, max 500자, counter.
+   Row: `예상 회의 시간(분)` number (default 30, 5–240) ·
+   `참석 인원` number (default 3, 1–20).
+4. **후보안 3장** — card each: title input (max 60자) + 4 numeric fields as
+   labeled steppers: `개발일수(dev_days)` 0–60 · `매출 임팩트 1–5` ·
+   `UX 임팩트 1–5` · `기술부채 1–5 (낮을수록 좋음)`. Column set is FIXED.
+5. **아바타 카드 3장** — each: `이름`(영문 사내 이름, max 20자) ·
+   `역할`(max 30자) · `우선 관심(top priority)` select of the 4 fields ·
+   `레드라인` rows `필드 select` + `연산자 select (≤ / ≥ / =)` + `값 number`
+   (0–60), max 2 rows per avatar, `+ 레드라인 추가` / `삭제`.
+   Helper: `레드라인은 절대 조건입니다. 하나라도 위반하면 그 후보안은 폐기됩니다.`
+6. **`[프리플라이트 실행]`** — accent, full-width, sticky at bottom on mobile.
+   Disabled while running (label → `평가 중…`).
+
+**Validation (inline, below field, red text, `aria-invalid`, blocks submit):**
+`안건을 입력해 주세요.` / `안건은 500자 이내로 입력해 주세요.` /
+`후보안 이름을 입력해 주세요.` / `숫자만 입력할 수 있습니다.` /
+`{n}~{m} 사이의 값을 입력해 주세요.` / `아바타 이름을 입력해 주세요.` /
+`레드라인 값을 입력해 주세요.`
+
+### 6.3 Zone B — 실행 & 결과 (right)
+
+**Empty state (before any run)** — dashed border card, muted:
+`아직 실행하지 않았습니다. [샘플로 시작]을 누르면 30초 안에 결과가 나옵니다.`
+
+**Running state**
+
+- **Phase stepper** (5 steps, `aria-live="polite"`, current step pulses):
+  `접수` → `아바타 평가 중` → `판정` → `브리핑` → `완료`.
+  Sub-label shows elapsed seconds (`12초 경과`).
+- **아바타 평가 카드 3장** — skeleton until that avatar's `avatar_result`
+  arrives, then flips to the result. Header = 이름 · 역할 ·
+  `우선 관심: UX 임팩트`. Body = per-candidate row:
+  candidate name + status chip (`통과` / `조건부 통과` / `거부`) + evidence text.
+  Footer if fallback: `⚠ 모델 응답 지연으로 규칙 기반 평가로 대체됨`.
+
+**Result state**
+
+1. **판정 요약** — 3 chips: `합의 1건` `사람 회의 1건` `폐기 1건`.
+2. **합의 초안 (RESOLVED)** — green-bordered card: candidate name, one-line
+   reason, `전원 통과` badge, avatar names as pills.
+3. **사람 회의 필요 (CONTESTED)** — amber card: candidate name, `사유:` line,
+   who raised the concern, and `제안 일정: 내일 10:00 (30분)`.
+4. **폐기 (REJECTED)** — red card, collapsed by default, shows the failing
+   redline as text: `Yehoshua의 레드라인 위반: 개발일수 12 > 10`.
+5. **판정 매트릭스** — `<table>`: rows = candidates, columns = 3 avatars +
+   `최종 판정`. Cells: `통과`/`조건부`/`거부` chip + tooltip with the constraint.
+   Horizontally scrollable on mobile.
+6. **브리핑** — facilitator's Korean markdown, in a card labeled
+   `AI 생성 브리핑 — 사실은 입력값 인용만 합니다`.
+7. **시간 영수증** — `예상 90 인·분 → 실측 {n}초`, and below in muted 13px:
+   `잠재 절감 추정치이며 검토 비용은 포함하지 않습니다.`
+8. **승인 게이트** — `[초안 승인]` (primary). Opens a confirm dialog:
+   title `초안을 승인할까요?`, body
+   `승인하면 결정 기록과 회의 초대(.ics) 파일을 내려받습니다. AI가 만든 초안이므로 내용을 확인한 뒤 사용하세요.`,
+   buttons `승인하고 내려받기` / `취소`. On confirm: download
+   `standin-decision.md` + `standin-meeting.ics`, and the button becomes
+   `승인됨 ✓ 다시 내려받기`. Downloads are **disabled before approval**
+   (criterion 6: confirmation before a consequential action).
+
+**Error state** — red banner replacing Zone B content:
+`평가에 실패했습니다. 잠시 후 다시 시도해 주세요.` + `[다시 시도]` +
+collapsible `자세히` with the error code. Rate-limited (HTTP 429):
+`잠시 후 다시 시도해 주세요. (1분에 한 번만 실행할 수 있습니다)`.
+Partial-failure never blanks the screen — a failed avatar renders with the
+rule-based fallback notice and the run completes.
 
 ## 7. Success criteria (mapped to judging)
 

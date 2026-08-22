@@ -60,7 +60,7 @@ graph LR
 - **3 레이어**: AI/LLM → Agent Framework · Tools → MCP · Infra → Aspire
 - Aspire AppHost는 **TypeScript(`apphost.mts`)로 작성 가능** (.NET 코드 불필요, aspire CLI만 필요)
 - 배포: `az login` → `aspire deploy` 한 방. Azure Container Apps + scale-to-zero. 삭제는 `aspire destroy`
-- **정정(13:55, 강사 예제 repo 실물 확인)**: aspire가 Dockerfile을 자동 생성해주는 게 **아니다**. 강사 예제(battle-school-lunch)도 `src/agent/Dockerfile` 등 **서비스별 명시적 Dockerfile**을 두고 apphost에서 `publishAsDockerFile()`로 연결한다. 우리도 web/agent/mcp Dockerfile 3개 필요 (패턴은 TRD §6 — 예제 복제). docker-compose만 불필요한 것
+- **컨테이너화 (13:55 오해 → 14:12 재확인)**: 강사 슬라이드 "Dockerfile 필요 없음 / Docker Compose 필요 없음"이 **맞다**. Aspire 13은 Python 앱(`addUvicornApp().withUv()`)을 감지해 배포 시 컨테이너 이미지를 **자동 생성**한다 (공식: devblogs.microsoft.com/aspire/python-is-first-class-in-aspire-13). 강사 예제 repo에 `src/agent/Dockerfile`이 있는 건 **선택적 커스터마이징**(`publishAsDockerFile()`)일 뿐 필수가 아니다. → **우리는 Dockerfile 없이 간다** (원샷 성공률↑). 자동 빌드 실패 시에만 예제 패턴으로 Dockerfile 추가 (TRD §6 폴백)
 - 멀티에이전트 패턴: 전문 에이전트 N개 **Concurrent 실행** → **Judge가 fan-in 종합** (강의 데모와 동일 패턴, 심사항목 1번 직격)
 - 프론트는 에이전트 응답을 **SSE 스트리밍**으로 받아 진행 단계(phase) 표시 → 심사 1번(스트리밍) + 5번(투명성) 동시 공략
 

@@ -15,7 +15,7 @@
 | F4 | 비대화형 인증: `COPILOT_GITHUB_TOKEN`(또는 GH_TOKEN/GITHUB_TOKEN) 환경변수 지원. `CopilotClient(github_token=...)` kw 존재 | sdk README |
 | F5 | `MCPStreamableHTTPTool`은 `agent_framework` 코어에서 임포트. 시그니처: `MCPStreamableHTTPTool("name", url, allowed_tools=[...], approval_mode="never_require", load_prompts=False)` | 강사 예제 data.py L13,58 |
 | F6 | `ConcurrentBuilder(participants=[...]).with_aggregator(Executor)` 패턴은 `agent-framework-orchestrations==1.0.1` | 강사 예제 workflow.py |
-| F7 | aspire는 Dockerfile을 자동 생성하지 않음 — 강사 예제도 서비스별 명시적 Dockerfile + `publishAsDockerFile()` 사용 | 예제 repo 트리 |
+| F7 | Aspire 13은 Python 앱을 **자동 컨테이너화** (Dockerfile 불필요). 강사 예제의 Dockerfile은 선택적 커스터마이징(`publishAsDockerFile()`) | Aspire 공식 블로그 "Python is First Class in Aspire 13" + 강사 슬라이드 "Dockerfile 필요 없음" |
 | F8 | apphost.mts API: `createBuilder`, `addAzureContainerAppEnvironment`, `addParameter(name,{value,secret:true})`, `addUvicornApp(...).withUv()`, `addViteApp`, `withEnvironment`, `getEndpoint('http')`, `withExternalHttpEndpoints()` | 예제 apphost.mts 원문 |
 | F9 | aspire CLI 13.5.2 설치 완료 (공식 스크립트, brew formula 없음) | 로컬 실행 |
 
@@ -189,35 +189,40 @@ type RunResult = { outcomes:CandidateOutcome[]; briefing_md:string; decision_rec
 `check_redlines` 결과 기준: 하드 위반 1개↑ → REJECTED / 하드 전원통과 + 아바타 전원 plain ACCEPT → RESOLVED / 하드 전원통과 + 우려 1개↑ → CONTESTED (익일 10:00 KST 30분 회의 .ics 생성).
 LLM 판정과 코드 판정 불일치 → 코드 우선 + `needs_review: true`.
 
-## 6. 컨테이너 (F3·F7 반영 — 명시적 Dockerfile 3개)
+## 6. 컨테이너화 — **Dockerfile 없이 간다** (F7)
 
-- 강사 예제 Dockerfile 패턴 복제: `python:3.12-slim-bookworm` 멀티스테이지, uv
-  (`COPY --from=ghcr.io/astral-sh/uv:0.11.32 /uv /usr/local/bin/uv`), non-root `appuser`,
-  `EXPOSE 8000`, HEALTHCHECK, `uvicorn app.main:app --host 0.0.0.0 --port ${PORT}`.
-- **agent 전용 추가 사항**:
-  - CLI는 wheel에 번들(F3) → **다운로드 단계 불필요**. 단 uv sync가 manylinux wheel(97MB)을 설치하므로 이미지 큼(정상).
-  - runtime 스테이지에 `ca-certificates` 설치 (CLI가 GitHub API HTTPS 통신).
-  - 시작 시 Gate 0 스모크 1회 (§3.1).
-- **아키텍처 주의 (Apple Silicon)**: ACA는 linux/amd64 전용. `aspire deploy`가 로컬 docker 빌드를 쓰므로
-  M-시리즈 맥에서는 배포 전 `export DOCKER_DEFAULT_PLATFORM=linux/amd64` 설정.
-  amd64로 빌드해야 uv가 x86_64 wheel(=x86_64 CLI 바이너리)을 선택함.
-- web: 예제처럼 Vite 빌드 → nginx :8080, `/agent/` 프록시 + SSE 버퍼링 off (§5.3).
+- **기본 경로(1순위, 이것으로 구현할 것)**: Dockerfile을 만들지 않는다.
+  apphost에서 `addUvicornApp(...).withUv()` / `addViteApp(...)`만 선언하면
+  Aspire 13이 배포 시 컨테이너 이미지를 자동 생성한다 (uv 의존성 설치 + uvicorn 진입점 포함).
+  원샷 빌드에서 파일 수를 줄이는 것이 성공률에 직결되므로 이 경로를 택한다.
+- **아키텍처 주의 (Apple Silicon 필수)**: ACA는 linux/amd64. `aspire deploy`가 로컬 docker 빌드를 쓰므로
+  M-시리즈 맥에서는 배포 전 `export DOCKER_DEFAULT_PLATFORM=linux/amd64`.
+  amd64로 빌드해야 uv가 x86_64 wheel(=x86_64 Copilot CLI 바이너리, F3)을 설치한다. **이건 Dockerfile 유무와 무관하게 필요.**
+- **폴백 (자동 빌드가 실패할 때만)**: 강사 예제 패턴으로 서비스별 Dockerfile 추가 +
+  apphost에서 `.publishAsDockerFile(c => c.withDockerfile('./src', {dockerfilePath:'agent/Dockerfile'}))`.
+  예제 패턴 = `python:3.12-slim-bookworm` 멀티스테이지, `COPY --from=ghcr.io/astral-sh/uv:0.11.32 /uv /usr/local/bin/uv`,
+  non-root appuser, `EXPOSE 8000`, `uvicorn app.main:app --host 0.0.0.0 --port ${PORT}`.
+- web은 Vite 빌드 산출물을 nginx로 서빙. `/agent/`를 AGENT_UPSTREAM으로 프록시하며
+  **SSE 때문에 `proxy_buffering off; proxy_read_timeout 300s;` 필수** (§5.3).
+  nginx 설정 커스터마이즈가 필요하므로 **web만은 Dockerfile+nginx.conf를 둘 수 있다** (자동 생성이 SSE 버퍼링을 못 끄면).
 
 ## 7. apphost.mts (예제 원문 API만 사용, F8 — Foundry 블록 전부 제거)
 
 ```ts
 import { createBuilder } from './.aspire/modules/aspire.mjs';
+import { loadEnvFile } from 'node:process';
+import { existsSync } from 'node:fs';
+if (existsSync('.env')) loadEnvFile('.env');
+
 const builder = await createBuilder();
 const aca = await builder.addAzureContainerAppEnvironment('aca');
 const copilotToken = await builder.addParameter('copilot-github-token',
   { value: process.env.COPILOT_GITHUB_TOKEN, secret: true });
 
 const mcp = await builder.addUvicornApp('mcp', './src/mcp', 'app.main:app').withUv()
-  .publishAsDockerFile(/* dockerfilePath: mcp/Dockerfile, targetPort 8000 */)
   .withHttpHealthCheck({ path: '/health' }).withComputeEnvironment(aca);
 
 const agent = await builder.addUvicornApp('agent', './src/agent', 'app.main:app').withUv()
-  .publishAsDockerFile(/* agent/Dockerfile, targetPort 8000 */)
   .withEnvironment('MCP_URL', mcp.getEndpoint('http'))
   .withEnvironment('COPILOT_GITHUB_TOKEN', copilotToken)
   .withReference(mcp).waitFor(mcp)
@@ -226,11 +231,13 @@ const agent = await builder.addUvicornApp('agent', './src/agent', 'app.main:app'
 await builder.addViteApp('web', './src/web')
   .withEnvironment('AGENT_UPSTREAM', agent.getEndpoint('http'))
   .withReference(agent).waitFor(agent)
-  .publishAsDockerFile(/* targetPort 8080 */)
   .withComputeEnvironment(aca).withExternalHttpEndpoints();
 
 await builder.build().run();
 ```
+
+Dockerfile 선언(`publishAsDockerFile`)은 넣지 않는다 — Aspire가 자동 컨테이너화(§6).
+자동 빌드 실패 시에만 §6 폴백을 적용.
 
 `.env`(gitignore): `COPILOT_GITHUB_TOKEN=...` — apphost가 `loadEnvFile`로 읽어 secret parameter로 주입.
 
@@ -271,7 +278,7 @@ aspire deploy
 |------|------|--------------|
 | 백엔드 Python | AF↔Copilot 어댑터가 Python 전용 (F1) | repo에 TS(web)+Py 혼재 |
 | sdk 버전은 어댑터에 위임 (1.0.2) | 어댑터가 `==1.0.2` 강제 (F2), 직접 핀 시 충돌 | 최신 sdk(1.0.11) 기능 미사용 |
-| 명시적 Dockerfile 3개 | aspire는 Dockerfile 자동 생성 안 함 (F7), 예제도 명시적 | 파일 3개 추가 관리 |
+| Dockerfile 없이 Aspire 자동 컨테이너화 | 강사 슬라이드 + Aspire 13 공식 문서가 자동 생성 보장 (F7). 파일 수↓ = 원샷 성공률↑ | 빌드 세부 제어 불가 → 실패 시 §6 폴백으로 전환 |
 | 판정은 코드, LLM은 평가·브리핑만 | 타협안 발명 방지 (책임 AI 6%) | 아바타는 자유 협상자가 아님 |
 | 기계적 폴백 평가 | 데모 무중단 (완성도 16%) | 폴백 시 evidence가 템플릿 문체 |
 | 같은 오리진 프록시 (CORS 미사용) | 설정 실수 원천 차단 | nginx 설정 1블록 추가 |
