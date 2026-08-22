@@ -10,6 +10,7 @@ import os
 from typing import Any, Literal
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 from pydantic import BaseModel, Field
 from starlette.responses import JSONResponse
 from starlette.routing import Route
@@ -17,7 +18,19 @@ from starlette.routing import Route
 FieldKey = Literal["dev_days", "revenue_impact", "ux_impact", "tech_debt"]
 Op = Literal["<=", ">=", "="]
 
-mcp = FastMCP("standin-mcp", stateless_http=True, json_response=True)
+# The service is internal-only in Azure Container Apps, and its ingress hostname
+# is not known at build time, so the default DNS-rebinding host allowlist would
+# reject every in-cluster call with 421 Misdirected Request.
+mcp = FastMCP(
+    "standin-mcp",
+    stateless_http=True,
+    json_response=True,
+    transport_security=TransportSecuritySettings(
+        enable_dns_rebinding_protection=False,
+        allowed_hosts=["*"],
+        allowed_origins=["*"],
+    ),
+)
 
 
 class CandidateIn(BaseModel):
