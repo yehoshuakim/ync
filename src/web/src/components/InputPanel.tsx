@@ -1,4 +1,4 @@
-import type { RefObject } from 'react';
+import { type RefObject, useEffect, useRef } from 'react';
 import type { FieldKey, Op } from '../types';
 import { FIELD_ORDER, FIELD_SHORT, FIELD_RANGE, OPS, OP_LABELS } from '../labels';
 import type { ConstraintForm, FormErrors, FormState } from '../validation';
@@ -28,6 +28,67 @@ const inputStyle = {
   borderColor: 'var(--color-border)',
   backgroundColor: 'var(--color-bg)',
 } as const;
+
+// Helper: does any candidate at index i have an error?
+function hasCandidateError(errors: FormErrors, i: number): boolean {
+  const e = errors.candidates[i];
+  if (!e) return false;
+  return !!(e.name || Object.values(e.fields).some(Boolean));
+}
+
+// Helper: does avatar at index ai have any error?
+function hasAvatarError(errors: FormErrors, ai: number): boolean {
+  const e = errors.avatars[ai];
+  if (!e) return false;
+  return !!(e.name || e.constraints.some(Boolean));
+}
+
+type CollapsibleCardProps = {
+  detailsId: string;
+  summaryText: string;
+  hasError: boolean;
+  forceOpen: boolean;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  children: any;
+  [key: string]: unknown;
+};
+
+function CollapsibleCard({ detailsId, summaryText, hasError, forceOpen, children }: CollapsibleCardProps) {
+  const ref = useRef<HTMLDetailsElement>(null);
+
+  // When forceOpen flips to true, open the details element.
+  useEffect(() => {
+    if (forceOpen && ref.current) {
+      ref.current.open = true;
+    }
+  }, [forceOpen]);
+
+  return (
+    <details
+      id={detailsId}
+      ref={ref}
+      className="rounded-xl border"
+      style={cardBase}
+    >
+      <summary
+        className="flex cursor-pointer select-none list-none items-center gap-2 rounded-xl px-4 py-3 text-sm font-medium focus-visible:outline-2 focus-visible:outline-offset-2"
+        style={{ outlineColor: 'var(--color-accent)' }}
+      >
+        <span className="flex-1 truncate">{summaryText}</span>
+        {hasError && (
+          <span
+            className="shrink-0 text-xs font-semibold"
+            style={{ color: 'var(--color-error, #dc2626)' }}
+            aria-live="polite"
+          >
+            ⚠ 오류
+          </span>
+        )}
+      </summary>
+      <div className="px-4 pb-4">{children}</div>
+    </details>
+  );
+}
 
 export function InputPanel({
   form,
@@ -205,229 +266,250 @@ export function InputPanel({
         </div>
       </section>
 
-      {/* 후보안 3장 */}
+      {/* 후보안 3장 — collapsible cards */}
       <section>
         <h2 className="mb-2">후보안</h2>
         <div className="flex flex-col gap-3">
-          {form.candidates.map((c, i) => (
-            <div key={c.id} className="rounded-xl border p-4" style={cardBase}>
-              <div className="mb-2 flex items-center gap-2">
-                <span
-                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border text-sm font-bold"
-                  style={{ borderColor: 'var(--color-accent)', color: 'var(--color-accent)' }}
-                >
-                  {c.id}
-                </span>
-                <div className="w-full">
-                  <label htmlFor={`cand-name-${c.id}`} className="sr-only">
-                    후보안 {c.id} 이름
-                  </label>
-                  <input
-                    id={`cand-name-${c.id}`}
-                    type="text"
-                    value={c.name}
-                    maxLength={60}
-                    aria-invalid={showErrors && errors.candidates[i]?.name ? true : undefined}
-                    aria-describedby={
-                      showErrors && errors.candidates[i]?.name ? `cand-name-${c.id}-err` : undefined
-                    }
-                    onChange={(e) => updateCandidate(i, { name: e.target.value })}
-                    placeholder="후보안 이름"
-                    className="w-full rounded-lg border px-2 py-2 font-medium"
-                    style={inputStyle}
-                  />
+          {form.candidates.map((c, i) => {
+            const candErr = showErrors && hasCandidateError(errors, i);
+            const summaryText = `${c.id} · ${c.name || '(이름 없음)'} — 개발 ${c.fields.dev_days}일 · 매출 ${c.fields.revenue_impact} · UX ${c.fields.ux_impact} · 부채 ${c.fields.tech_debt}`;
+            return (
+              <CollapsibleCard
+                key={c.id}
+                detailsId={`cand-card-${c.id}`}
+                summaryText={summaryText}
+                hasError={candErr}
+                forceOpen={candErr}
+              >
+                <div className="mb-2 flex items-center gap-2 pt-2">
+                  <span
+                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border text-sm font-bold"
+                    style={{ borderColor: 'var(--color-accent)', color: 'var(--color-accent)' }}
+                  >
+                    {c.id}
+                  </span>
+                  <div className="w-full">
+                    <label htmlFor={`cand-name-${c.id}`} className="sr-only">
+                      후보안 {c.id} 이름
+                    </label>
+                    <input
+                      id={`cand-name-${c.id}`}
+                      type="text"
+                      value={c.name}
+                      maxLength={60}
+                      aria-invalid={showErrors && errors.candidates[i]?.name ? true : undefined}
+                      aria-describedby={
+                        showErrors && errors.candidates[i]?.name ? `cand-name-${c.id}-err` : undefined
+                      }
+                      onChange={(e) => updateCandidate(i, { name: e.target.value })}
+                      placeholder="후보안 이름"
+                      className="w-full rounded-lg border px-2 py-2 font-medium"
+                      style={inputStyle}
+                    />
+                  </div>
                 </div>
-              </div>
-              <FieldError
-                id={`cand-name-${c.id}-err`}
-                message={showErrors ? errors.candidates[i]?.name : undefined}
-              />
-              <div className="mt-2 grid grid-cols-2 gap-3">
-                {FIELD_ORDER.map((f) => (
-                  <NumberStepper
-                    key={f}
-                    id={`cand-${c.id}-${f}`}
-                    label={CANDIDATE_FIELD_LABELS[f]}
-                    value={c.fields[f]}
-                    min={FIELD_RANGE[f].min}
-                    max={FIELD_RANGE[f].max}
-                    error={showErrors ? errors.candidates[i]?.fields[f] : undefined}
-                    onChange={(v) => updateCandidateField(i, f, v)}
-                  />
-                ))}
-              </div>
-            </div>
-          ))}
+                <FieldError
+                  id={`cand-name-${c.id}-err`}
+                  message={showErrors ? errors.candidates[i]?.name : undefined}
+                />
+                <div className="mt-2 grid grid-cols-2 gap-3">
+                  {FIELD_ORDER.map((f) => (
+                    <NumberStepper
+                      key={f}
+                      id={`cand-${c.id}-${f}`}
+                      label={CANDIDATE_FIELD_LABELS[f]}
+                      value={c.fields[f]}
+                      min={FIELD_RANGE[f].min}
+                      max={FIELD_RANGE[f].max}
+                      error={showErrors ? errors.candidates[i]?.fields[f] : undefined}
+                      onChange={(v) => updateCandidateField(i, f, v)}
+                    />
+                  ))}
+                </div>
+              </CollapsibleCard>
+            );
+          })}
         </div>
       </section>
 
-      {/* 아바타 카드 3장 */}
+      {/* 아바타 카드 3장 — collapsible cards */}
       <section>
         <h2 className="mb-1">아바타</h2>
         <p className="mb-2 text-xs" style={{ color: 'var(--color-muted)' }}>
           레드라인은 절대 조건입니다. 하나라도 위반하면 그 후보안은 폐기됩니다.
         </p>
         <div className="flex flex-col gap-3">
-          {form.avatars.map((a, ai) => (
-            <div key={ai} className="rounded-xl border p-4" style={cardBase}>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label
-                    htmlFor={`av-name-${ai}`}
-                    className="mb-1 block text-xs"
-                    style={{ color: 'var(--color-muted)' }}
-                  >
-                    이름
-                  </label>
-                  <input
-                    id={`av-name-${ai}`}
-                    type="text"
-                    value={a.name}
-                    maxLength={20}
-                    aria-invalid={showErrors && errors.avatars[ai]?.name ? true : undefined}
-                    aria-describedby={
-                      showErrors && errors.avatars[ai]?.name ? `av-name-${ai}-err` : undefined
-                    }
-                    onChange={(e) => updateAvatar(ai, { name: e.target.value })}
-                    className="w-full rounded-lg border px-2 py-2 font-medium"
-                    style={inputStyle}
-                  />
-                  <FieldError
-                    id={`av-name-${ai}-err`}
-                    message={showErrors ? errors.avatars[ai]?.name : undefined}
-                  />
+          {form.avatars.map((a, ai) => {
+            const avErr = showErrors && hasAvatarError(errors, ai);
+            const rlCount = a.hard_constraints.length;
+            const summaryText = `${a.name || '(이름 없음)'} · ${a.role || '(역할 없음)'} — 우선 관심: ${FIELD_SHORT[a.top_priority]} · 레드라인 ${rlCount}개`;
+            return (
+              <CollapsibleCard
+                key={ai}
+                detailsId={`av-card-${ai}`}
+                summaryText={summaryText}
+                hasError={avErr}
+                forceOpen={avErr}
+              >
+                <div className="grid grid-cols-2 gap-3 pt-2">
+                  <div>
+                    <label
+                      htmlFor={`av-name-${ai}`}
+                      className="mb-1 block text-xs"
+                      style={{ color: 'var(--color-muted)' }}
+                    >
+                      이름
+                    </label>
+                    <input
+                      id={`av-name-${ai}`}
+                      type="text"
+                      value={a.name}
+                      maxLength={20}
+                      aria-invalid={showErrors && errors.avatars[ai]?.name ? true : undefined}
+                      aria-describedby={
+                        showErrors && errors.avatars[ai]?.name ? `av-name-${ai}-err` : undefined
+                      }
+                      onChange={(e) => updateAvatar(ai, { name: e.target.value })}
+                      className="w-full rounded-lg border px-2 py-2 font-medium"
+                      style={inputStyle}
+                    />
+                    <FieldError
+                      id={`av-name-${ai}-err`}
+                      message={showErrors ? errors.avatars[ai]?.name : undefined}
+                    />
+                  </div>
+                  <div>
+                    <label
+                      htmlFor={`av-role-${ai}`}
+                      className="mb-1 block text-xs"
+                      style={{ color: 'var(--color-muted)' }}
+                    >
+                      역할
+                    </label>
+                    <input
+                      id={`av-role-${ai}`}
+                      type="text"
+                      value={a.role}
+                      maxLength={30}
+                      onChange={(e) => updateAvatar(ai, { role: e.target.value })}
+                      className="w-full rounded-lg border px-2 py-2"
+                      style={inputStyle}
+                    />
+                  </div>
                 </div>
-                <div>
+
+                <div className="mt-3">
                   <label
-                    htmlFor={`av-role-${ai}`}
+                    htmlFor={`av-top-${ai}`}
                     className="mb-1 block text-xs"
                     style={{ color: 'var(--color-muted)' }}
                   >
-                    역할
+                    우선 관심(top priority)
                   </label>
-                  <input
-                    id={`av-role-${ai}`}
-                    type="text"
-                    value={a.role}
-                    maxLength={30}
-                    onChange={(e) => updateAvatar(ai, { role: e.target.value })}
+                  <select
+                    id={`av-top-${ai}`}
+                    value={a.top_priority}
+                    onChange={(e) => updateAvatar(ai, { top_priority: e.target.value as FieldKey })}
                     className="w-full rounded-lg border px-2 py-2"
                     style={inputStyle}
-                  />
-                </div>
-              </div>
-
-              <div className="mt-3">
-                <label
-                  htmlFor={`av-top-${ai}`}
-                  className="mb-1 block text-xs"
-                  style={{ color: 'var(--color-muted)' }}
-                >
-                  우선 관심(top priority)
-                </label>
-                <select
-                  id={`av-top-${ai}`}
-                  value={a.top_priority}
-                  onChange={(e) => updateAvatar(ai, { top_priority: e.target.value as FieldKey })}
-                  className="w-full rounded-lg border px-2 py-2"
-                  style={inputStyle}
-                >
-                  {FIELD_ORDER.map((f) => (
-                    <option key={f} value={f}>
-                      {FIELD_SHORT[f]}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="mt-3">
-                <span className="mb-1 block text-xs" style={{ color: 'var(--color-muted)' }}>
-                  레드라인
-                </span>
-                <div className="flex flex-col gap-2">
-                  {a.hard_constraints.map((h, ci) => {
-                    const cErr = showErrors ? errors.avatars[ai]?.constraints[ci] : undefined;
-                    return (
-                      <div key={ci}>
-                        <div className="flex items-center gap-2">
-                          <label htmlFor={`av-${ai}-c-${ci}-field`} className="sr-only">
-                            레드라인 필드
-                          </label>
-                          <select
-                            id={`av-${ai}-c-${ci}-field`}
-                            value={h.field}
-                            onChange={(e) =>
-                              updateConstraint(ai, ci, { field: e.target.value as FieldKey })
-                            }
-                            className="min-w-0 flex-1 rounded-lg border px-2 py-2"
-                            style={inputStyle}
-                          >
-                            {FIELD_ORDER.map((f) => (
-                              <option key={f} value={f}>
-                                {FIELD_SHORT[f]}
-                              </option>
-                            ))}
-                          </select>
-                          <label htmlFor={`av-${ai}-c-${ci}-op`} className="sr-only">
-                            연산자
-                          </label>
-                          <select
-                            id={`av-${ai}-c-${ci}-op`}
-                            value={h.op}
-                            onChange={(e) => updateConstraint(ai, ci, { op: e.target.value as Op })}
-                            className="w-16 shrink-0 rounded-lg border px-2 py-2 text-center"
-                            style={inputStyle}
-                          >
-                            {OPS.map((op) => (
-                              <option key={op} value={op}>
-                                {OP_LABELS[op]}
-                              </option>
-                            ))}
-                          </select>
-                          <label htmlFor={`av-${ai}-c-${ci}-val`} className="sr-only">
-                            레드라인 값
-                          </label>
-                          <input
-                            id={`av-${ai}-c-${ci}-val`}
-                            type="number"
-                            inputMode="numeric"
-                            value={h.value}
-                            min={0}
-                            max={60}
-                            aria-invalid={cErr ? true : undefined}
-                            aria-describedby={cErr ? `av-${ai}-c-${ci}-err` : undefined}
-                            onChange={(e) => updateConstraint(ai, ci, { value: e.target.value })}
-                            className="w-20 shrink-0 rounded-lg border px-2 py-2 text-center"
-                            style={inputStyle}
-                          />
-                          <button
-                            type="button"
-                            aria-label="레드라인 삭제"
-                            onClick={() => removeConstraint(ai, ci)}
-                            className="w-11 shrink-0 rounded-lg border text-sm"
-                            style={{ borderColor: 'var(--color-border)' }}
-                          >
-                            삭제
-                          </button>
-                        </div>
-                        <FieldError id={`av-${ai}-c-${ci}-err`} message={cErr} />
-                      </div>
-                    );
-                  })}
-                </div>
-                {a.hard_constraints.length < 2 && (
-                  <button
-                    type="button"
-                    onClick={() => addConstraint(ai)}
-                    className="mt-2 text-sm"
-                    style={{ color: 'var(--color-accent)' }}
                   >
-                    + 레드라인 추가
-                  </button>
-                )}
-              </div>
-            </div>
-          ))}
+                    {FIELD_ORDER.map((f) => (
+                      <option key={f} value={f}>
+                        {FIELD_SHORT[f]}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="mt-3">
+                  <span className="mb-1 block text-xs" style={{ color: 'var(--color-muted)' }}>
+                    레드라인
+                  </span>
+                  <div className="flex flex-col gap-2">
+                    {a.hard_constraints.map((h, ci) => {
+                      const cErr = showErrors ? errors.avatars[ai]?.constraints[ci] : undefined;
+                      return (
+                        <div key={ci}>
+                          <div className="flex items-center gap-2">
+                            <label htmlFor={`av-${ai}-c-${ci}-field`} className="sr-only">
+                              레드라인 필드
+                            </label>
+                            <select
+                              id={`av-${ai}-c-${ci}-field`}
+                              value={h.field}
+                              onChange={(e) =>
+                                updateConstraint(ai, ci, { field: e.target.value as FieldKey })
+                              }
+                              className="min-w-0 flex-1 rounded-lg border px-2 py-2"
+                              style={inputStyle}
+                            >
+                              {FIELD_ORDER.map((f) => (
+                                <option key={f} value={f}>
+                                  {FIELD_SHORT[f]}
+                                </option>
+                              ))}
+                            </select>
+                            <label htmlFor={`av-${ai}-c-${ci}-op`} className="sr-only">
+                              연산자
+                            </label>
+                            <select
+                              id={`av-${ai}-c-${ci}-op`}
+                              value={h.op}
+                              onChange={(e) => updateConstraint(ai, ci, { op: e.target.value as Op })}
+                              className="w-16 shrink-0 rounded-lg border px-2 py-2 text-center"
+                              style={inputStyle}
+                            >
+                              {OPS.map((op) => (
+                                <option key={op} value={op}>
+                                  {OP_LABELS[op]}
+                                </option>
+                              ))}
+                            </select>
+                            <label htmlFor={`av-${ai}-c-${ci}-val`} className="sr-only">
+                              레드라인 값
+                            </label>
+                            <input
+                              id={`av-${ai}-c-${ci}-val`}
+                              type="number"
+                              inputMode="numeric"
+                              value={h.value}
+                              min={0}
+                              max={60}
+                              aria-invalid={cErr ? true : undefined}
+                              aria-describedby={cErr ? `av-${ai}-c-${ci}-err` : undefined}
+                              onChange={(e) => updateConstraint(ai, ci, { value: e.target.value })}
+                              className="w-20 shrink-0 rounded-lg border px-2 py-2 text-center"
+                              style={inputStyle}
+                            />
+                            <button
+                              type="button"
+                              aria-label="레드라인 삭제"
+                              onClick={() => removeConstraint(ai, ci)}
+                              className="w-11 shrink-0 rounded-lg border text-sm"
+                              style={{ borderColor: 'var(--color-border)' }}
+                            >
+                              삭제
+                            </button>
+                          </div>
+                          <FieldError id={`av-${ai}-c-${ci}-err`} message={cErr} />
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {a.hard_constraints.length < 2 && (
+                    <button
+                      type="button"
+                      onClick={() => addConstraint(ai)}
+                      className="mt-2 text-sm"
+                      style={{ color: 'var(--color-accent)' }}
+                    >
+                      + 레드라인 추가
+                    </button>
+                  )}
+                </div>
+              </CollapsibleCard>
+            );
+          })}
         </div>
       </section>
 
