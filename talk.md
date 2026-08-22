@@ -218,3 +218,14 @@ PRD 초안 작성 후 검증에서 발견된 오류와 수정:
 - 팀원 추가: **사무엘 (Samuel)**, GitHub: `j23559595-afk` → 3인 팀.
 - 샘플 아바타 이름도 실제 팀 반영: **Yehoshua / Caleb / Samuel** (12:57 질문의 답).
 - HACKATHON.md 역할 분담 3인 체제로 갱신, repo 협업자 초대.
+
+## [08-22 13:45] TRD 작성 (Copilot)
+
+- 현빈 지시: IDEATION·PRD 교차검증 완료 확인 → TRD 진행.
+- 작성 전 기술 검증(추측 금지 원칙):
+  - `agent-framework-github-copilot` PyPI 1.0.3 실존 확인 — AF↔Copilot SDK 공식 브릿지, **Python 전용** → 백엔드 언어 Python 확정.
+  - Copilot SDK 비대화형 인증: `COPILOT_GITHUB_TOKEN` 환경변수 공식 지원 확인 → **1순위 리스크(Azure 배포에서 Max 계정 인증) 해소**. Aspire secret parameter로 주입.
+  - 강사 예제(devkimchi/battle-school-lunch) 구조 분석: web(Vite)/agent(FastAPI)/mcp(FastAPI) + apphost.mts(TypeScript Aspire). 단 예제는 Foundry로 모델 연결 — 우리는 Foundry 없이 Copilot SDK 직결(불필요 Azure 서비스 = 감점 회피 + 인프라 단순화).
+- TRD.md 확정: 3서비스 고정, MCP 2도구 스키마, SSE 이벤트 스키마, 데이터 모델(TS/Pydantic 미러), 판정 로직 코드 권한 명시, Gate 0(모델 스모크 테스트를 UI 작업 전에), 결정 기록 7건.
+- aspire CLI 설치 완료 (13.5.2) — brew formula 없음, 공식 스크립트 사용. HACKATHON.md 체크리스트 갱신.
+- 다음: GPT-5.3-Codex로 TRD 교차검증 → 반영 → 원샷 구현 착수.

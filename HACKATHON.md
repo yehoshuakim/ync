@@ -109,23 +109,17 @@ graph LR
 
 - [x] `az` CLI — 설치됨, **로그인됨** (협성고 김현빈 / innodgvibeventure 테넌트 구독)
 - [x] `azd`, `dotnet`, `node`, `npm`, `gh`, `copilot`(CLI), `python3`, `git` — 설치됨
-- [ ] **`aspire` CLI — 미설치. 아래 명령으로 설치 필요**
+- [x] `aspire` CLI — **설치됨 (13.5.2, 2026-08-22 13:45)**. brew에는 formula 없음 → 공식 스크립트로 설치함
 - [ ] GitHub Copilot 쿠폰 확인: github.com/settings/copilot → Billing & Licenses → Payment information에 **Max 적용** 표시 확인 (Pro/Pro+/학생팩 계정이면 새 계정 필요)
-- [ ] 이건주 노트북도 동일 체크
+- [ ] 이건주·사무엘 노트북도 동일 체크
 
-**aspire CLI 설치 — 터미널(셸) 명령, 한 줄씩 붙여넣기:**
-
-```bash
-brew install aspire
-```
-
-실행 후 정상 화면: `aspire`가 설치되고, 이어서 `aspire --version` 입력 시 버전 번호(예: `13.x.x`)가 출력되면 정상. `command not found`가 나오면 터미널을 새로 열고 다시 확인.
-
-대안(brew 실패 시):
+**aspire CLI 설치 (완료된 방법 — 다른 노트북에서 동일하게) — 터미널(셸) 명령, 한 줄씩 붙여넣기:**
 
 ```bash
 curl -sSL https://aspire.dev/install.sh | bash
 ```
+
+실행 후 정상 화면: `Aspire CLI successfully installed to: ~/.aspire/bin/aspire` 출력. 이후 **터미널을 새로 열고** `aspire --version` 입력 시 버전 번호(예: `13.5.2`)가 나오면 정상. `command not found`가 나오면 `source ~/.zshrc` 실행 후 재시도. (참고: `brew install aspire`는 formula가 없어 실패함)
 
 ## 9. 링크 모음
 
