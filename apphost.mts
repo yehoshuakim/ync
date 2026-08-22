@@ -28,8 +28,11 @@ const agent = await builder
     .withHttpHealthCheck({ path: '/health' })
     .withComputeEnvironment(aca);
 
+// Vite output is build-only, so web ships as an nginx container that serves the
+// bundle and reverse-proxies /agent with SSE buffering disabled (same origin, no CORS).
 await builder
-    .addViteApp('web', './src/web')
+    .addDockerfile('web', './src/web')
+    .withHttpEndpoint({ targetPort: 8080 })
     .withEnvironment('AGENT_UPSTREAM', agent.getEndpoint('http'))
     .withReference(agent)
     .waitFor(agent)

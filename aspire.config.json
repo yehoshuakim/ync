@@ -10,5 +10,11 @@
     "Aspire.Hosting.Python": "13.5.2",
     "Aspire.Hosting.Azure.AppContainers": "13.5.2",
     "Aspire.Hosting.JavaScript": "13.5.2"
+  },
+  "Azure": {
+    "SubscriptionId": "116481c1-a352-432e-8c4c-76a8e3cd2325",
+    "Location": "koreacentral",
+    "ResourceGroup": "rg-standin",
+    "AllowResourceGroupCreation": "true"
   }
 }

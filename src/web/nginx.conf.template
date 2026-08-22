@@ -1,0 +1,37 @@
+server {
+    listen       8080;
+    server_name  _;
+
+    root   /usr/share/nginx/html;
+    index  index.html;
+
+    # SSE must not be buffered or the whole stream arrives at once at the end.
+    location /agent/ {
+        proxy_pass         __AGENT_UPSTREAM__/agent/;
+        proxy_http_version 1.1;
+
+        # Azure Container Apps internal ingress terminates TLS and routes by SNI/Host,
+        # so both must carry the upstream hostname.
+        proxy_ssl_server_name on;
+        proxy_ssl_name     __AGENT_HOST__;
+        proxy_set_header   Host __AGENT_HOST__;
+
+        proxy_set_header   X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+        proxy_set_header   Connection "";
+        proxy_buffering    off;
+        proxy_cache        off;
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+        chunked_transfer_encoding on;
+    }
+
+    location = /health {
+        add_header Content-Type application/json;
+        return 200 '{"status":"ok"}';
+    }
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
